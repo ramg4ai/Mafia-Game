@@ -643,6 +643,12 @@ socket.on('night-resolved', ({ eliminated, events }) => {
             addLog(`☠️ ${name} was eliminated during the night.`, 'important');
             if (name === state.myName) state.isAlive = false;
         });
+        // Mark eliminated players dead in state and re-render the board immediately
+        state.players = state.players.map(p => ({
+            ...p,
+            alive: eliminated.includes(p.name) ? false : p.alive,
+        }));
+        renderPlayersBoard(state.players);
     }
 });
 
@@ -651,8 +657,11 @@ socket.on('day-phase-start', ({ players, discussionSeconds }) => {
     hideAllPanels();
     updatePhaseBanner('☀️', 'Day Phase', 'Discussion');
 
-    // Update player board
-    renderPlayersBoard(players.map(p => ({ ...p, alive: true })));
+    // Use state.players as source of truth (already updated with night eliminations).
+    // The server only sends alive players; use that to confirm alive status but keep dead players visible.
+    const aliveIds = new Set(players.map(p => p.id));
+    state.players = state.players.map(p => ({ ...p, alive: aliveIds.has(p.id) }));
+    renderPlayersBoard(state.players);
 
     const panel = document.getElementById('day-discuss-panel');
     panel.classList.remove('hidden');
@@ -697,6 +706,12 @@ socket.on('vote-resolved', ({ eliminated, tie, votes, jesterWin }) => {
 
     if (eliminated) {
         if (eliminated === state.myName) state.isAlive = false;
+        // Mark voted-out player dead in state and refresh board immediately
+        state.players = state.players.map(p => ({
+            ...p,
+            alive: p.name === eliminated ? false : p.alive,
+        }));
+        renderPlayersBoard(state.players);
         addLog(`☠️ ${eliminated} was voted out${jesterWin ? ' — THE JESTER WINS!' : '!'}`, 'important');
     } else if (tie) {
         addLog('🤝 The vote was tied — no one was eliminated.', 'safe-ev');
