@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mafia — The Game</title>
+  <meta name="description" content="Multiplayer Mafia party game. Host from your machine and play with your remote teammates." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+
+  <!-- ╔══════════════════════════════════════╗ -->
+  <!-- ║            LOBBY SCREEN             ║ -->
+  <!-- ╚══════════════════════════════════════╝ -->
+  <div id="screen-lobby" class="screen active">
+    <div class="lobby-bg"></div>
+    <div class="lobby-center">
+      <div class="game-logo">
+        <div class="logo-icon">🎭</div>
+        <h1 class="logo-title">MAFIA</h1>
+        <p class="logo-subtitle">A Game of Deception</p>
+      </div>
+
+      <div class="lobby-tabs">
+        <button id="btn-tab-create" class="tab-btn active" onclick="showTab('create')">Create Game</button>
+        <button id="btn-tab-join" class="tab-btn" onclick="showTab('join')">Join Game</button>
+      </div>
+
+      <!-- Create Panel -->
+      <div id="panel-create" class="tab-panel active">
+        <div class="input-group">
+          <label for="input-host-name">Your Name</label>
+          <input id="input-host-name" type="text" placeholder="Enter your name" maxlength="20" autocomplete="off" />
+        </div>
+        <button id="btn-create-game" class="btn-primary" onclick="createGame()">Create Game</button>
+      </div>
+
+      <!-- Join Panel -->
+      <div id="panel-join" class="tab-panel">
+        <div class="input-group">
+          <label for="input-join-name">Your Name</label>
+          <input id="input-join-name" type="text" placeholder="Enter your name" maxlength="20" autocomplete="off" />
+        </div>
+        <div class="input-group">
+          <label for="input-room-code">Room Code</label>
+          <input id="input-room-code" type="text" placeholder="e.g. AB1CD" maxlength="5" autocomplete="off" style="text-transform:uppercase;letter-spacing:0.2em;" />
+        </div>
+        <button id="btn-join-game" class="btn-primary" onclick="joinGame()">Join Game</button>
+      </div>
+
+      <div id="lobby-error" class="error-msg hidden"></div>
+    </div>
+  </div>
+
+  <!-- ╔══════════════════════════════════════╗ -->
+  <!-- ║            WAITING ROOM             ║ -->
+  <!-- ╚══════════════════════════════════════╝ -->
+  <div id="screen-waiting" class="screen">
+    <div class="waiting-bg"></div>
+    <div class="waiting-layout">
+      <div class="waiting-header">
+        <div class="logo-small">🎭 MAFIA</div>
+        <div class="room-info">
+          <span class="room-label">Room Code</span>
+          <div class="room-code-display">
+            <span id="display-room-code">-----</span>
+            <button class="copy-btn" id="btn-copy-code" onclick="copyRoomCode()" title="Copy link">⎘</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="waiting-content">
+        <div class="players-panel">
+          <h2 class="panel-title">Players <span id="player-count-badge">0/10</span></h2>
+          <ul id="player-list" class="player-list"></ul>
+          <p class="waiting-hint" id="waiting-hint">Waiting for players... (min 6 to start)</p>
+        </div>
+
+        <div class="host-controls" id="host-controls">
+          <div class="timer-setting">
+            <label for="discussion-timer">Discussion Time</label>
+            <div class="timer-controls">
+              <button class="timer-btn" onclick="adjustTimer(-1)">−</button>
+              <span id="timer-display">3 min</span>
+              <button class="timer-btn" onclick="adjustTimer(1)">+</button>
+            </div>
+          </div>
+          <button id="btn-start-game" class="btn-primary btn-start" onclick="startGame()" disabled>
+            Start Game
+          </button>
+          <p class="start-hint">Need at least 6 players</p>
+        </div>
+      </div>
+
+      <div id="share-link-bar" class="share-bar hidden">
+        <span>Share link:</span>
+        <span id="share-url" class="share-url"></span>
+        <button class="copy-btn small" onclick="copyShareLink()">Copy</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ╔══════════════════════════════════════╗ -->
+  <!-- ║          ROLE REVEAL SCREEN         ║ -->
+  <!-- ╚══════════════════════════════════════╝ -->
+  <div id="screen-role-reveal" class="screen">
+    <div class="reveal-bg"></div>
+    <div class="reveal-center">
+      <p class="reveal-hint">Your secret role is...</p>
+      <div class="role-card" id="role-card">
+        <div class="role-card-inner">
+          <div class="role-card-front">
+            <div class="card-question">?</div>
+          </div>
+          <div class="role-card-back">
+            <div class="role-icon" id="role-icon">🎭</div>
+            <div class="role-name" id="role-name">Loading...</div>
+            <div class="role-group-badge" id="role-group-badge"></div>
+            <div class="role-desc" id="role-desc"></div>
+          </div>
+        </div>
+      </div>
+      <button class="btn-primary" id="btn-flip-card" onclick="flipRoleCard()">Reveal My Role</button>
+      <div id="mafia-reveal-box" class="mafia-reveal hidden">
+        <p class="mafia-reveal-label">👁 Your Mafia allies:</p>
+        <div id="mafia-allies-list"></div>
+      </div>
+      <button class="btn-secondary hidden" id="btn-goto-game" onclick="gotoGame()">Enter the Game →</button>
+    </div>
+  </div>
+
+  <!-- ╔══════════════════════════════════════╗ -->
+  <!-- ║            GAME SCREEN              ║ -->
+  <!-- ╚══════════════════════════════════════╝ -->
+  <div id="screen-game" class="screen">
+    <div class="game-layout">
+
+      <!-- Sidebar: Mafia Chat (shown only to mafia) -->
+      <aside class="mafia-chat hidden" id="mafia-chat-sidebar">
+        <div class="chat-header">
+          <span class="chat-icon">💀</span>
+          <span>Mafia Chat</span>
+        </div>
+        <div class="chat-messages" id="chat-messages"></div>
+        <div class="chat-input-row">
+          <input type="text" id="chat-input" placeholder="Message..." maxlength="200" onkeydown="chatKeyDown(event)" />
+          <button class="send-btn" onclick="sendMafiaChat()">↑</button>
+        </div>
+      </aside>
+
+      <!-- Main Game Area -->
+      <main class="game-main">
+        <!-- Phase Banner -->
+        <div class="phase-banner" id="phase-banner">
+          <div class="phase-icon" id="phase-icon">🌙</div>
+          <div class="phase-info">
+            <div class="phase-name" id="phase-name">Night Phase</div>
+            <div class="phase-sub" id="phase-sub">Round 1</div>
+          </div>
+          <div class="phase-timer" id="phase-timer"></div>
+        </div>
+
+        <!-- Players Board -->
+        <div class="players-board" id="players-board"></div>
+
+        <!-- Night Action Panel -->
+        <div id="night-action-panel" class="action-panel hidden">
+          <div class="action-content">
+            <h3 id="action-title" class="action-title">Choose a target</h3>
+            <p id="action-desc" class="action-desc"></p>
+
+            <!-- Joker has 3 sub-actions -->
+            <div id="joker-actions" class="joker-actions hidden">
+              <button class="joker-btn active" id="jbtn-kill" onclick="selectJokerAction('kill')">⚔️ Kill</button>
+              <button class="joker-btn" id="jbtn-protect" onclick="selectJokerAction('protect')">🛡️ Protect</button>
+              <button class="joker-btn" id="jbtn-investigate" onclick="selectJokerAction('investigate')">🔍 Investigate</button>
+            </div>
+
+            <div class="targets-grid" id="targets-grid"></div>
+            <div class="action-confirm hidden" id="action-confirm">
+              <p>Target: <strong id="confirm-target-name"></strong></p>
+              <button class="btn-primary small" onclick="confirmAction()">Confirm</button>
+              <button class="btn-secondary small" onclick="cancelAction()">Cancel</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Night Waiting Panel -->
+        <div id="night-wait-panel" class="wait-panel hidden">
+          <div class="wait-anim">
+            <div class="sleep-dot"></div>
+            <div class="sleep-dot"></div>
+            <div class="sleep-dot"></div>
+          </div>
+          <p id="night-wait-text" class="wait-text">The village sleeps...</p>
+          <p id="night-turn-status" class="turn-status"></p>
+        </div>
+
+        <!-- Night Timer Ring (for active actors) -->
+        <div id="night-timer-ring" class="timer-ring-wrap hidden">
+          <svg class="timer-ring" viewBox="0 0 100 100">
+            <circle class="ring-bg" cx="50" cy="50" r="44"></circle>
+            <circle class="ring-fill" id="ring-fill" cx="50" cy="50" r="44" stroke-dasharray="276.46" stroke-dashoffset="0"></circle>
+          </svg>
+          <div class="ring-count" id="ring-count">30</div>
+        </div>
+
+        <!-- Day Discussion Panel -->
+        <div id="day-discuss-panel" class="day-panel hidden">
+          <div class="day-announcements" id="day-announcements"></div>
+          <div class="discussion-area">
+            <div class="discussion-header">
+              <span class="discuss-icon">💬</span>
+              <span>Open Discussion</span>
+              <div class="discussion-timer-bar">
+                <div class="timer-fill" id="discuss-timer-fill"></div>
+              </div>
+              <span id="discuss-countdown" class="discuss-countdown">--:--</span>
+            </div>
+            <p class="discuss-hint">Use voice or other chat to discuss. Identify the Mafia!</p>
+          </div>
+        </div>
+
+        <!-- Voting Panel -->
+        <div id="voting-panel" class="voting-panel hidden">
+          <div class="voting-header">
+            <h3>🗳️ Vote to Eliminate</h3>
+            <div class="vote-timer-ring">
+              <svg class="timer-ring small" viewBox="0 0 100 100">
+                <circle class="ring-bg" cx="50" cy="50" r="44"></circle>
+                <circle class="ring-fill" id="vote-ring-fill" cx="50" cy="50" r="44" stroke-dasharray="276.46" stroke-dashoffset="0"></circle>
+              </svg>
+              <div class="ring-count small" id="vote-ring-count">30</div>
+            </div>
+          </div>
+          <p class="vote-hint">Vote for who you think is Mafia. Majority eliminates – ties spare.</p>
+          <div class="vote-grid" id="vote-grid"></div>
+          <div class="vote-status" id="vote-status">0 / 0 voted</div>
+          <button class="btn-abstain" id="btn-abstain" onclick="castVote(null)">Abstain</button>
+        </div>
+
+        <!-- Investigation Result Popup -->
+        <div id="investigation-popup" class="investigation-popup hidden">
+          <div class="invest-inner">
+            <div class="invest-icon" id="invest-icon">🔍</div>
+            <h3 class="invest-title">Investigation Result</h3>
+            <p id="invest-result" class="invest-result"></p>
+            <button class="btn-primary small" onclick="closeInvestigation()">Got it</button>
+          </div>
+        </div>
+
+        <!-- Event Log -->
+        <div class="event-log" id="event-log">
+          <div class="log-header">📜 Game Log</div>
+          <div class="log-entries" id="log-entries"></div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- ╔══════════════════════════════════════╗ -->
+  <!-- ║           RESULTS SCREEN            ║ -->
+  <!-- ╚══════════════════════════════════════╝ -->
+  <div id="screen-results" class="screen">
+    <div class="results-bg"></div>
+    <div class="results-center">
+      <div class="winner-badge" id="winner-badge"></div>
+      <h2 class="winner-name" id="winner-name"></h2>
+      <p class="winner-reason" id="winner-reason"></p>
+
+      <h3 class="reveal-heading">Role Reveal</h3>
+      <div class="role-reveal-grid" id="role-reveal-grid"></div>
+
+      <button class="btn-primary" onclick="location.reload()">Play Again</button>
+    </div>
+  </div>
+
+  <!-- Global Toast -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>
