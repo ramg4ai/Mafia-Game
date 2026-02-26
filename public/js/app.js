@@ -17,6 +17,7 @@ const state = {
     discussionMinutes: 3,
     currentNightRole: null,
     selectedTarget: null,
+    allTargets: [],      // full target list including self (for Joker re-render)
     jokerAction: 'kill',
     hasVoted: false,
     isAlive: true,
@@ -161,13 +162,19 @@ function flipRoleCard() {
     const card = document.getElementById('role-card');
     card.classList.add('flipped');
     document.getElementById('btn-flip-card').classList.add('hidden');
+    // Show the persistent role sidebar only after the player has seen their role
+    document.getElementById('role-sidebar').classList.remove('hidden');
+    document.body.classList.add('has-role');
     setTimeout(() => {
         document.getElementById('btn-goto-game').classList.remove('hidden');
     }, 900);
 }
 
 function gotoGame() {
-    showScreen('game');
+    // Notify server this player has viewed their role; show waiting panel
+    document.getElementById('btn-goto-game').classList.add('hidden');
+    document.getElementById('role-waiting-panel').classList.remove('hidden');
+    socket.emit('role-ready');
 }
 
 // ─── Game Screen helpers ──────────────────────────────────────────────────────
@@ -276,6 +283,13 @@ function showNightActionPanel(role, targets) {
     const panel = document.getElementById('night-action-panel');
     panel.classList.remove('hidden');
 
+    // Reset any leftover investigation result from a previous turn
+    document.getElementById('invest-inline').classList.add('hidden');
+    document.getElementById('targets-grid').classList.remove('hidden');
+
+    // Store all targets (including self if server sent it)
+    state.allTargets = targets;
+
     // Title & description per role
     const titles = {
         MAFIA_GROUP: '⚔️ Choose a target to eliminate',
@@ -293,19 +307,11 @@ function showNightActionPanel(role, targets) {
     if (role === 'JOKER') {
         jokerDiv.classList.remove('hidden');
         state.jokerAction = 'kill';
-        selectJokerAction('kill');
+        selectJokerAction('kill'); // this renders the grid
     } else {
         jokerDiv.classList.add('hidden');
+        renderTargetGrid(targets); // Doctor/Police/Vigilante: use full list as-is
     }
-
-    // Build targets grid
-    const grid = document.getElementById('targets-grid');
-    grid.innerHTML = targets.map(t => `
-    <button class="target-btn" id="target-${t.id}" onclick="selectTarget('${t.id}', '${escHtml(t.name)}')">
-      ${makeAvatar(t.name, 30)}
-      <span class="target-name">${escHtml(t.name)}</span>
-    </button>
-  `).join('');
 
     state.selectedTarget = null;
     document.getElementById('action-confirm').classList.add('hidden');
@@ -326,11 +332,30 @@ function cancelAction() {
     document.getElementById('action-confirm').classList.add('hidden');
 }
 
+// Renders target buttons from a list, self entries get a "(You)" label
+function renderTargetGrid(targets) {
+    const grid = document.getElementById('targets-grid');
+    grid.innerHTML = targets.map(t => `
+    <button class="target-btn" id="target-${t.id}" onclick="selectTarget('${t.id}', '${escHtml(t.isSelf ? t.name + ' (You)' : t.name)}')">
+      ${makeAvatar(t.name, 30)}
+      <span class="target-name">${escHtml(t.name)}${t.isSelf ? ' <em style="color:var(--text3);font-size:0.75rem;">(You)</em>' : ''}</span>
+    </button>
+  `).join('');
+    // Clear any prior selection when grid re-renders
+    state.selectedTarget = null;
+    document.getElementById('action-confirm').classList.add('hidden');
+}
+
 function selectJokerAction(action) {
     state.jokerAction = action;
     ['kill', 'protect', 'investigate'].forEach(a => {
         document.getElementById(`jbtn-${a}`)?.classList.toggle('active', a === action);
     });
+    // Re-render targets: include self only for protect
+    const targets = action === 'protect'
+        ? state.allTargets
+        : state.allTargets.filter(t => !t.isSelf);
+    renderTargetGrid(targets);
 }
 
 function confirmAction() {
@@ -338,6 +363,8 @@ function confirmAction() {
     if (!targetId) return;
 
     const roleKey = state.currentNightRole;
+    const isInvestigation = roleKey === 'POLICE'
+        || (roleKey === 'JOKER' && state.jokerAction === 'investigate');
 
     if (roleKey === 'MAFIA_GROUP') {
         socket.emit('mafia-vote', { targetId });
@@ -351,10 +378,19 @@ function confirmAction() {
         socket.emit('vigilante-action', { targetId });
     }
 
+    addLog('You submitted your night action.', 'safe-ev');
+
+    if (isInvestigation) {
+        // Keep the action panel open — the investigation-result event will show the inline result.
+        // Timer ring keeps running until server advances the turn naturally.
+        document.getElementById('action-confirm').classList.add('hidden');
+        return;
+    }
+
+    // All other roles: transition to wait panel immediately
     clearInterval(nightRingInterval);
     hideAllPanels();
     showNightWaitPanel('Your action has been submitted. Waiting for others...');
-    addLog('You submitted your night action.', 'safe-ev');
 }
 
 function showNightWaitPanel(text) {
@@ -407,6 +443,15 @@ function showInvestResult(targetName, group, role) {
 
 function closeInvestigation() {
     document.getElementById('investigation-popup').classList.add('hidden');
+}
+
+function doneInvestigation() {
+    // Tell the server to end this turn early
+    socket.emit('investigation-done');
+    // Immediately transition to wait panel
+    clearInterval(nightRingInterval);
+    hideAllPanels();
+    showNightWaitPanel('Your action has been submitted. Waiting for others...');
 }
 
 // ─── Mafia Chat ───────────────────────────────────────────────────────────────
@@ -492,6 +537,13 @@ socket.on('timer-updated', ({ minutes }) => {
     updateTimerDisplay(minutes);
 });
 
+socket.on('role-ready-update', ({ readyPlayers, waitingPlayers }) => {
+    document.getElementById('ready-players-list').innerHTML =
+        readyPlayers.map(n => `<div class="ready-chip">${escHtml(n)}</div>`).join('');
+    document.getElementById('waiting-players-list').innerHTML =
+        waitingPlayers.map(n => `<div class="waiting-chip">${escHtml(n)}</div>`).join('');
+});
+
 // ── Game Start & Role Reveal ─────────────────────────────────────────────────
 socket.on('game-started', ({ players }) => {
     renderPlayersBoard(players.map(p => ({ ...p, alive: true })));
@@ -504,6 +556,7 @@ socket.on('role-assigned', ({ role, roleKey, group, description }) => {
     state.myGroup = group;
     state.isMafia = group === 'mafia';
 
+    // ── Role reveal card (flip screen) ──
     document.getElementById('role-icon').textContent = ROLE_ICONS[roleKey] || '❓';
     document.getElementById('role-name').textContent = role;
     document.getElementById('role-desc').textContent = description;
@@ -516,23 +569,39 @@ socket.on('role-assigned', ({ role, roleKey, group, description }) => {
         document.getElementById('mafia-chat-sidebar').classList.remove('hidden');
     }
 
+    // ── Persistent role sidebar (data only — stays hidden until card is flipped) ──
+    const sidebar = document.getElementById('role-sidebar');
+    sidebar.classList.add(group); // adds colour class WITHOUT removing 'hidden'
+    document.getElementById('rs-icon').textContent = ROLE_ICONS[roleKey] || '❓';
+    document.getElementById('rs-name').textContent = role;
+    document.getElementById('rs-badge').textContent = capitalize(group);
+    document.getElementById('rs-desc').textContent = description;
+    // Sidebar becomes visible in flipRoleCard()
+
     showScreen('role-reveal');
 });
 
 socket.on('mafia-reveal', ({ mafiaNames }) => {
+    // Flip screen reveal box
     const box = document.getElementById('mafia-reveal-box');
     box.classList.remove('hidden');
     const allies = mafiaNames.filter(n => n !== state.myName);
-    if (allies.length > 0) {
-        document.getElementById('mafia-allies-list').innerHTML =
-            allies.map(n => `<div class="ally-chip">${escHtml(n)}</div>`).join('');
-    } else {
-        document.getElementById('mafia-allies-list').innerHTML = '<span style="color:var(--text3);font-size:0.85rem;">You are the only Mafia member.</span>';
-    }
+    const alliesHtml = allies.length > 0
+        ? allies.map(n => `<div class="ally-chip">${escHtml(n)}</div>`).join('')
+        : '<span style="color:var(--text3);font-size:0.85rem;">You are the only Mafia member.</span>';
+    document.getElementById('mafia-allies-list').innerHTML = alliesHtml;
+
+    // Persistent sidebar allies
+    const rsAllies = document.getElementById('rs-allies');
+    rsAllies.classList.remove('hidden');
+    document.getElementById('rs-allies-list').innerHTML = allies.length > 0
+        ? allies.map(n => `<div class="rs-ally-chip">${escHtml(n)}</div>`).join('')
+        : '<span style="color:var(--text3);font-size:0.76rem;">Solo Mafia</span>';
 });
 
 // ── Night Phase ───────────────────────────────────────────────────────────────
 socket.on('night-phase-start', ({ round }) => {
+    showScreen('game'); // transition from role reveal to game
     hideAllPanels();
     updatePhaseBanner('🌙', 'Night Phase', `Round ${round}`);
     addLog(`Round ${round} — Night has fallen.`, 'important');
@@ -559,6 +628,10 @@ socket.on('night-turn-done', ({ role }) => {
 
 socket.on('night-turn-skipped', ({ role }) => {
     addLog(`${role === 'MAFIA_GROUP' ? 'Mafia' : role} skipped their action.`);
+    // Timer expired — ensure any open action panel (e.g. investigation result) is cleared
+    clearInterval(nightRingInterval);
+    hideAllPanels();
+    showNightWaitPanel('Waiting for the night to pass...');
 });
 
 socket.on('night-resolved', ({ eliminated, events }) => {
@@ -566,7 +639,10 @@ socket.on('night-resolved', ({ eliminated, events }) => {
     if (eliminated.length === 0) {
         addLog('Nobody was eliminated overnight. The village breathes a sigh of relief.', 'safe-ev');
     } else {
-        eliminated.forEach(name => addLog(`☠️ ${name} was eliminated during the night.`, 'important'));
+        eliminated.forEach(name => {
+            addLog(`☠️ ${name} was eliminated during the night.`, 'important');
+            if (name === state.myName) state.isAlive = false;
+        });
     }
 });
 
@@ -596,7 +672,16 @@ socket.on('voting-start', ({ players, timeLeft }) => {
 
     renderVoteGrid(players);
     document.getElementById('vote-status').textContent = `0 / ${players.length} voted`;
-    document.getElementById('btn-abstain').disabled = false;
+
+    const abstainBtn = document.getElementById('btn-abstain');
+    if (!state.isAlive) {
+        // Eliminated players cannot vote
+        document.querySelectorAll('.vote-btn').forEach(b => b.disabled = true);
+        abstainBtn.disabled = true;
+        addLog('You have been eliminated and cannot vote.', 'important');
+    } else {
+        abstainBtn.disabled = false;
+    }
 
     startVoteRing(timeLeft);
     addLog('Voting has started! You have 30 seconds to cast your vote.', 'important');
@@ -611,6 +696,7 @@ socket.on('vote-resolved', ({ eliminated, tie, votes, jesterWin }) => {
     clearInterval(voteRingInterval);
 
     if (eliminated) {
+        if (eliminated === state.myName) state.isAlive = false;
         addLog(`☠️ ${eliminated} was voted out${jesterWin ? ' — THE JESTER WINS!' : '!'}`, 'important');
     } else if (tie) {
         addLog('🤝 The vote was tied — no one was eliminated.', 'safe-ev');
@@ -630,8 +716,23 @@ socket.on('player-disconnected', ({ name }) => {
 });
 
 socket.on('investigation-result', ({ targetName, group, role }) => {
-    showInvestResult(targetName, group, role);
-    addLog(`Your investigation is complete.`, 'safe-ev');
+    // Hide the selection UI
+    document.getElementById('targets-grid').classList.add('hidden');
+    document.getElementById('action-confirm').classList.add('hidden');
+    document.getElementById('joker-actions').classList.add('hidden');
+
+    // Build inline result inside the action panel
+    const groupColor = group === 'mafia' ? '#fca5a5' : group === 'civilian' ? '#86efac' : '#fcd34d';
+    const icon = group === 'mafia' ? '🩸' : group === 'civilian' ? '✅' : '⭐';
+
+    document.getElementById('invest-inline-icon').textContent = icon;
+    document.getElementById('invest-inline-result').innerHTML =
+        `<strong style="color:${groupColor}">${escHtml(targetName)}</strong> belongs to the `
+        + `<strong style="color:${groupColor}">${capitalize(group)} Group</strong>`
+        + `<br><span style="color:var(--text3);font-size:0.82rem;">Role: ${escHtml(role)}</span>`;
+
+    document.getElementById('invest-inline').classList.remove('hidden');
+    addLog('Your investigation is complete.', 'safe-ev');
 });
 
 socket.on('mafia-vote-update', ({ votes, currentTarget, allVoted }) => {

@@ -25,14 +25,14 @@ const rooms = {}; // roomCode → gameState
 // ─────────────────────────────────────────────────────────────────────────────
 
 const ROLES = {
-  MAFIA:      { name: 'Mafia',      group: 'mafia',    special: false },
-  TRAITOR:    { name: 'Traitor',    group: 'mafia',    special: true  },
-  DOCTOR:     { name: 'Doctor',     group: 'civilian', special: false },
-  POLICE:     { name: 'Police',     group: 'civilian', special: false },
-  VIGILANTE:  { name: 'Vigilante',  group: 'civilian', special: true  },
-  JESTER:     { name: 'Jester',     group: 'neutral',  special: true  },
-  JOKER:      { name: 'Joker',      group: 'neutral',  special: false },
-  CIVILIAN:   { name: 'Civilian',   group: 'civilian', special: false },
+  MAFIA: { name: 'Mafia', group: 'mafia', special: false },
+  TRAITOR: { name: 'Traitor', group: 'mafia', special: true },
+  DOCTOR: { name: 'Doctor', group: 'civilian', special: false },
+  POLICE: { name: 'Police', group: 'civilian', special: false },
+  VIGILANTE: { name: 'Vigilante', group: 'civilian', special: true },
+  JESTER: { name: 'Jester', group: 'neutral', special: true },
+  JOKER: { name: 'Joker', group: 'neutral', special: false },
+  CIVILIAN: { name: 'Civilian', group: 'civilian', special: false },
 };
 
 // Night phase action order (role names)
@@ -152,6 +152,22 @@ function getNextNightActor(room) {
   return null; // all actors done
 }
 
+// Returns the kill target id if there is a clear majority, null on tie or no votes.
+function resolveMafiaVotes(mafiaVotes) {
+  const votes = Object.values(mafiaVotes);
+  if (votes.length === 0) return null; // nobody voted
+
+  const tally = {};
+  for (const v of votes) tally[v] = (tally[v] || 0) + 1;
+
+  const sorted = Object.entries(tally).sort((a, b) => b[1] - a[1]);
+  // Clear majority = top candidate is strictly ahead of second place
+  if (sorted.length === 1 || sorted[0][1] > sorted[1][1]) {
+    return sorted[0][0]; // unambiguous winner
+  }
+  return null; // tie — no kill
+}
+
 function resolveNightActions(room) {
   const events = [];
 
@@ -261,16 +277,41 @@ function startNightTurn(room) {
   for (const player of current.players) {
     const sock = io.sockets.sockets.get(player.id);
     if (sock) {
+      // Doctor can protect themselves; Joker receives self too (client filters by action type)
+      const canTargetSelf = current.role === 'DOCTOR' || current.role === 'JOKER';
       const alivePlayers = room.players
-        .filter(p => p.alive && p.id !== player.id)
-        .map(p => ({ id: p.id, name: p.name }));
+        .filter(p => {
+          if (!p.alive) return false;
+          // Mafia can only target non-Mafia players (not their own group)
+          if (current.role === 'MAFIA_GROUP' && ROLES[p.role].group === 'mafia') return false;
+          // Self-targeting: only allowed for Doctor and Joker
+          if (!canTargetSelf && p.id === player.id) return false;
+          return true;
+        })
+        .map(p => ({ id: p.id, name: p.name, isSelf: p.id === player.id }));
       sock.emit('your-night-turn', { role: current.role, targets: alivePlayers, timeLeft: 30 });
     }
   }
 
-  // 30 second timeout — auto-skip
+  // 30 second timeout — auto-skip; re-finalise mafia kill in case of partial votes
   room.nightTimer = setTimeout(() => {
-    io.to(room.code).emit('night-turn-skipped', { role: current.role });
+    if (current.role === 'MAFIA_GROUP') {
+      room.nightActions.mafiaKill = resolveMafiaVotes(room.nightActions.mafiaVotes);
+    }
+
+    // Check if the role already completed their action (investigation roles keep timer running)
+    const alreadyActed =
+      (current.role === 'POLICE' && room.nightActions.policeInvestigate) ||
+      (current.role === 'JOKER' && room.nightActions.jokerAction?.action === 'investigate');
+
+    if (alreadyActed) {
+      // Timer expired naturally after investigation — don't log a skip
+      io.to(room.code).emit('night-turn-done', { role: current.role });
+    } else {
+      // Role truly did nothing — log the skip
+      io.to(room.code).emit('night-turn-skipped', { role: current.role });
+    }
+
     startNightTurn(room);
   }, 31000);
 }
@@ -548,7 +589,33 @@ io.on('connection', (socket) => {
     });
 
     room.round = 1;
-    startNightPhase(room);
+    room.playersReady = new Set();
+    // Night phase starts only after every player clicks "Enter the Game"
+  });
+
+  // ── Role Ready (gate before night phase) ───────────────────────────────────
+  socket.on('role-ready', () => {
+    const room = rooms[socket.roomCode];
+    if (!room || room.phase !== 'lobby') return;
+
+    room.playersReady.add(socket.id);
+
+    const totalPlayers = room.players.length;
+    const readyPlayers = room.players.filter(p => room.playersReady.has(p.id)).map(p => p.name);
+    const waitingPlayers = room.players.filter(p => !room.playersReady.has(p.id)).map(p => p.name);
+
+    // Broadcast progress to everyone
+    io.to(room.code).emit('role-ready-update', {
+      readyPlayers,
+      waitingPlayers,
+      totalReady: readyPlayers.length,
+      total: totalPlayers,
+    });
+
+    // All players ready → start night phase
+    if (readyPlayers.length === totalPlayers) {
+      startNightPhase(room);
+    }
   });
 
   // ── Night Actions ─────────────────────────────────────────────────────────
@@ -562,12 +629,8 @@ io.on('connection', (socket) => {
 
     room.nightActions.mafiaVotes[socket.id] = targetId;
 
-    // Tally mafia votes — majority wins; if all voted, go with plurality
-    const votes = Object.values(room.nightActions.mafiaVotes);
-    const tally = {};
-    for (const v of votes) tally[v] = (tally[v] || 0) + 1;
-    const top = Object.entries(tally).sort((a, b) => b[1] - a[1])[0];
-    if (top) room.nightActions.mafiaKill = top[0];
+    // Tally votes — need a clear majority; tie or zero votes = no kill
+    room.nightActions.mafiaKill = resolveMafiaVotes(room.nightActions.mafiaVotes);
 
     const mafiaAlive = room.players.filter(p => p.alive && ROLES[p.role].group === 'mafia');
     const allVoted = mafiaAlive.every(p => room.nightActions.mafiaVotes[p.id]);
@@ -580,6 +643,7 @@ io.on('connection', (socket) => {
     });
 
     if (allVoted) {
+      // All mafia have voted — finalise and advance immediately
       clearTimeout(room.nightTimer);
       io.to(room.code).emit('night-turn-done', { role: 'MAFIA_GROUP' });
       setTimeout(() => startNightTurn(room), 1500);
@@ -605,6 +669,7 @@ io.on('connection', (socket) => {
     if (!room || room.phase !== 'night') return;
     const police = room.players.find(p => p.id === socket.id && p.role === 'POLICE' && p.alive);
     if (!police) return;
+    if (room.nightActions.policeInvestigate) return; // already investigated this night
 
     const target = room.players.find(p => p.id === targetId);
     if (!target) return;
@@ -612,9 +677,9 @@ io.on('connection', (socket) => {
     // Traitor appears as Civilian
     let revealedGroup = ROLES[target.role].group;
     if (target.role === 'TRAITOR') revealedGroup = 'civilian';
-
     const revealedRole = target.role === 'TRAITOR' ? 'Civilian' : ROLES[target.role].name;
 
+    // Send result privately — timer keeps running; client shows result inline
     socket.emit('investigation-result', {
       targetName: target.name,
       group: revealedGroup,
@@ -622,9 +687,7 @@ io.on('connection', (socket) => {
     });
 
     room.nightActions.policeInvestigate = targetId;
-    clearTimeout(room.nightTimer);
-    io.to(room.code).emit('night-turn-done', { role: 'POLICE' });
-    setTimeout(() => startNightTurn(room), 1500);
+    // Do NOT advance the turn — let the 31s timer fire naturally
   });
 
   // Joker action
@@ -633,6 +696,7 @@ io.on('connection', (socket) => {
     if (!room || room.phase !== 'night') return;
     const joker = room.players.find(p => p.id === socket.id && p.role === 'JOKER' && p.alive);
     if (!joker) return;
+    if (room.nightActions.jokerAction) return; // already acted this night
 
     if (action === 'investigate') {
       const target = room.players.find(p => p.id === targetId);
@@ -645,11 +709,32 @@ io.on('connection', (socket) => {
           role: target.role === 'TRAITOR' ? 'Civilian' : ROLES[target.role].name,
         });
       }
+      // Record action but keep timer running — client shows result inline
+      room.nightActions.jokerAction = { action, targetId };
+      return;
     }
 
+    // Kill or protect: advance the turn immediately as before
     room.nightActions.jokerAction = { action, targetId };
     clearTimeout(room.nightTimer);
     io.to(room.code).emit('night-turn-done', { role: 'JOKER' });
+    setTimeout(() => startNightTurn(room), 1500);
+  });
+
+  // Player clicked Done on investigation result — advance turn early
+  socket.on('investigation-done', () => {
+    const room = rooms[socket.roomCode];
+    if (!room || room.phase !== 'night') return;
+    const player = room.players.find(p => p.id === socket.id && p.alive);
+    if (!player) return;
+
+    // Only valid for Police who investigated, or Joker who used investigate
+    const isPolice = player.role === 'POLICE' && room.nightActions.policeInvestigate;
+    const isJokerInvestigate = player.role === 'JOKER' && room.nightActions.jokerAction?.action === 'investigate';
+    if (!isPolice && !isJokerInvestigate) return;
+
+    clearTimeout(room.nightTimer);
+    io.to(room.code).emit('night-turn-done', { role: player.role === 'POLICE' ? 'POLICE' : 'JOKER' });
     setTimeout(() => startNightTurn(room), 1500);
   });
 
@@ -753,14 +838,14 @@ io.on('connection', (socket) => {
 
 function getRoleDescription(roleKey) {
   const descriptions = {
-    MAFIA:     'You are Mafia. Each night, vote with your team to eliminate a civilian.',
-    TRAITOR:   'You are a Traitor. You work with the Mafia but appear as Civilian to investigators.',
-    DOCTOR:    'You are the Doctor. Each night, choose one player to protect from elimination.',
-    POLICE:    'You are the Police. Each night, investigate one player to learn their identity.',
+    MAFIA: 'You are Mafia. Each night, vote with your team to eliminate a civilian.',
+    TRAITOR: 'You are a Traitor. You work with the Mafia but appear as Civilian to investigators.',
+    DOCTOR: 'You are the Doctor. Each night, choose one player to protect from elimination.',
+    POLICE: 'You are the Police. Each night, investigate one player to learn their identity.',
     VIGILANTE: 'You are the Vigilante. Each night, you may kill one player. If your target is Civilian, you die instead.',
-    JESTER:    'You are the Jester. Get voted out during the day to win! (You have no night ability)',
-    JOKER:     'You are the Joker. Each night you may kill, protect, or investigate one player.',
-    CIVILIAN:  'You are a Civilian. Survive the night and help identify the Mafia during the day.',
+    JESTER: 'You are the Jester. Get voted out during the day to win! (You have no night ability)',
+    JOKER: 'You are the Joker. Each night you may kill, protect, or investigate one player.',
+    CIVILIAN: 'You are a Civilian. Survive the night and help identify the Mafia during the day.',
   };
   return descriptions[roleKey] || '';
 }

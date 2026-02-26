@@ -1,15 +1,20 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Mafia — The Game</title>
-  <meta name="description" content="Multiplayer Mafia party game. Host from your machine and play with your remote teammates." />
+  <meta name="description"
+    content="Multiplayer Mafia party game. Host from your machine and play with your remote teammates." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Inter:wght@300;400;500;600;700&display=swap"
+    rel="stylesheet" />
   <link rel="stylesheet" href="/css/style.css" />
 </head>
+
 <body>
 
   <!-- ╔══════════════════════════════════════╗ -->
@@ -46,7 +51,8 @@
         </div>
         <div class="input-group">
           <label for="input-room-code">Room Code</label>
-          <input id="input-room-code" type="text" placeholder="e.g. AB1CD" maxlength="5" autocomplete="off" style="text-transform:uppercase;letter-spacing:0.2em;" />
+          <input id="input-room-code" type="text" placeholder="e.g. AB1CD" maxlength="5" autocomplete="off"
+            style="text-transform:uppercase;letter-spacing:0.2em;" />
         </div>
         <button id="btn-join-game" class="btn-primary" onclick="joinGame()">Join Game</button>
       </div>
@@ -129,6 +135,26 @@
         <div id="mafia-allies-list"></div>
       </div>
       <button class="btn-secondary hidden" id="btn-goto-game" onclick="gotoGame()">Enter the Game →</button>
+
+      <!-- Waiting for all players to view their role -->
+      <div id="role-waiting-panel" class="role-waiting hidden">
+        <div class="wait-anim" style="justify-content:center;">
+          <div class="sleep-dot"></div>
+          <div class="sleep-dot"></div>
+          <div class="sleep-dot"></div>
+        </div>
+        <p class="role-waiting-title">Waiting for everyone to view their role…</p>
+        <div class="role-ready-lists">
+          <div class="ready-col">
+            <p class="ready-col-label ready">✔ Ready</p>
+            <div id="ready-players-list"></div>
+          </div>
+          <div class="ready-col">
+            <p class="ready-col-label waiting">⏳ Waiting</p>
+            <div id="waiting-players-list"></div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -176,7 +202,8 @@
             <div id="joker-actions" class="joker-actions hidden">
               <button class="joker-btn active" id="jbtn-kill" onclick="selectJokerAction('kill')">⚔️ Kill</button>
               <button class="joker-btn" id="jbtn-protect" onclick="selectJokerAction('protect')">🛡️ Protect</button>
-              <button class="joker-btn" id="jbtn-investigate" onclick="selectJokerAction('investigate')">🔍 Investigate</button>
+              <button class="joker-btn" id="jbtn-investigate" onclick="selectJokerAction('investigate')">🔍
+                Investigate</button>
             </div>
 
             <div class="targets-grid" id="targets-grid"></div>
@@ -184,6 +211,16 @@
               <p>Target: <strong id="confirm-target-name"></strong></p>
               <button class="btn-primary small" onclick="confirmAction()">Confirm</button>
               <button class="btn-secondary small" onclick="cancelAction()">Cancel</button>
+            </div>
+
+            <!-- Inline investigation result (shown after investigating, timer keeps running) -->
+            <div class="invest-inline hidden" id="invest-inline">
+              <div class="invest-inline-icon" id="invest-inline-icon">🔍</div>
+              <div class="invest-inline-body">
+                <p class="invest-inline-label">Investigation Result</p>
+                <p class="invest-inline-result" id="invest-inline-result"></p>
+                <button class="btn-primary small" style="margin-top:12px;" onclick="doneInvestigation()">Done ✓</button>
+              </div>
             </div>
           </div>
         </div>
@@ -203,7 +240,8 @@
         <div id="night-timer-ring" class="timer-ring-wrap hidden">
           <svg class="timer-ring" viewBox="0 0 100 100">
             <circle class="ring-bg" cx="50" cy="50" r="44"></circle>
-            <circle class="ring-fill" id="ring-fill" cx="50" cy="50" r="44" stroke-dasharray="276.46" stroke-dashoffset="0"></circle>
+            <circle class="ring-fill" id="ring-fill" cx="50" cy="50" r="44" stroke-dasharray="276.46"
+              stroke-dashoffset="0"></circle>
           </svg>
           <div class="ring-count" id="ring-count">30</div>
         </div>
@@ -231,7 +269,8 @@
             <div class="vote-timer-ring">
               <svg class="timer-ring small" viewBox="0 0 100 100">
                 <circle class="ring-bg" cx="50" cy="50" r="44"></circle>
-                <circle class="ring-fill" id="vote-ring-fill" cx="50" cy="50" r="44" stroke-dasharray="276.46" stroke-dashoffset="0"></circle>
+                <circle class="ring-fill" id="vote-ring-fill" cx="50" cy="50" r="44" stroke-dasharray="276.46"
+                  stroke-dashoffset="0"></circle>
               </svg>
               <div class="ring-count small" id="vote-ring-count">30</div>
             </div>
@@ -281,7 +320,28 @@
   <!-- Global Toast -->
   <div id="toast" class="toast hidden"></div>
 
+  <!-- ╔══════════════════════════════════════╗ -->
+  <!-- ║     PERSISTENT ROLE SIDEBAR         ║ -->
+  <!-- ╚══════════════════════════════════════╝ -->
+  <aside id="role-sidebar" class="role-sidebar hidden">
+    <div class="rs-glow" id="rs-glow"></div>
+    <div class="rs-icon" id="rs-icon">🎭</div>
+    <div class="rs-name" id="rs-name">–</div>
+    <div class="rs-badge-wrap">
+      <span class="rs-badge" id="rs-badge">–</span>
+    </div>
+    <hr class="rs-divider" />
+    <p class="rs-desc-label">Your Ability</p>
+    <p class="rs-desc" id="rs-desc"></p>
+    <div class="rs-allies hidden" id="rs-allies">
+      <hr class="rs-divider" />
+      <p class="rs-desc-label">👁 Your Allies</p>
+      <div id="rs-allies-list"></div>
+    </div>
+  </aside>
+
   <script src="/socket.io/socket.io.js"></script>
   <script src="/js/app.js"></script>
 </body>
+
 </html>
