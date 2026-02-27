@@ -229,6 +229,11 @@
               <button class="btn-secondary small" onclick="cancelAction()">Cancel</button>
             </div>
 
+            <!-- Skip button — Vigilante only -->
+            <button class="vig-skip-btn hidden" id="vig-skip-btn" onclick="skipVigilanteAction()">
+              ⏭️ Skip — I'll hold my shot
+            </button>
+
             <!-- Inline investigation result (shown after investigating, timer keeps running) -->
             <div class="invest-inline hidden" id="invest-inline">
               <div class="invest-inline-icon" id="invest-inline-icon">🔍</div>
@@ -250,6 +255,20 @@
           </div>
           <p id="night-wait-text" class="wait-text">The village sleeps...</p>
           <p id="night-turn-status" class="turn-status"></p>
+
+          <!-- Passive ghost guess — only shown to eliminated non-ability players -->
+          <div id="ghost-passive-section" class="ghost-passive-section hidden">
+            <hr class="gp-hr" />
+            <p class="gp-label">👻 Ghost Prediction</p>
+            <p class="gp-sub">Who will be eliminated tonight?</p>
+            <div id="gp-grid" class="gp-grid"></div>
+            <button class="gp-none-btn" id="gp-none-btn" onclick="submitPassiveGuess('none')">
+              🕊️ No one will be killed
+            </button>
+            <div class="gp-confirmed hidden" id="gp-confirmed">
+              ✅ Prediction locked in. Watch and see…
+            </div>
+          </div>
         </div>
 
         <!-- Night Outcome Splash (shown 5 sec after night resolves) -->

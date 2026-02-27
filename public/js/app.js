@@ -354,6 +354,9 @@ function showNightActionPanel(role, targets, timeLeft = 30) {
 
     state.selectedTarget = null;
     document.getElementById('action-confirm').classList.add('hidden');
+    // Show skip button only for Vigilante
+    const skipBtn = document.getElementById('vig-skip-btn');
+    if (skipBtn) skipBtn.classList.toggle('hidden', role !== 'VIGILANTE');
     startNightRing(timeLeft);
 }
 
@@ -369,6 +372,13 @@ function cancelAction() {
     state.selectedTarget = null;
     document.querySelectorAll('.target-btn').forEach(b => b.classList.remove('selected'));
     document.getElementById('action-confirm').classList.add('hidden');
+}
+
+function skipVigilanteAction() {
+    clearInterval(nightRingInterval);
+    socket.emit('skip-vigilante-action');
+    hideAllPanels();
+    showNightWaitPanel('You held your shot. Waiting for others...');
 }
 
 // Renders target buttons from a list, self entries get a "(You)" label
@@ -436,6 +446,7 @@ function showNightWaitPanel(text) {
     hideAllPanels();
     document.getElementById('night-wait-panel').classList.remove('hidden');
     document.getElementById('night-wait-text').textContent = text;
+    // Keep passive ghost section state — it's re-shown by ghost-passive-turn each night
 }
 
 // ─── Voting ───────────────────────────────────────────────────────────────────
@@ -512,13 +523,27 @@ function showGhostGuessPanel(alivePlayers) {
 
 function submitGhostGuess(targetId) {
     socket.emit('ghost-guess', { targetId });
-    // Highlight selection
     document.querySelectorAll('.gg-btn').forEach(b => b.classList.remove('selected'));
     if (targetId !== 'none') {
         document.getElementById(`gg-btn-${targetId}`)?.classList.add('selected');
     } else {
         document.getElementById('gg-none-btn')?.classList.add('selected');
     }
+}
+
+// Passive ghost guess (Civilian/Jester dead players — persistent, no timer)
+function submitPassiveGuess(targetId) {
+    socket.emit('ghost-guess', { targetId });
+    // Highlight selection
+    document.querySelectorAll('.gp-btn').forEach(b => b.classList.remove('selected'));
+    if (targetId !== 'none') {
+        document.getElementById(`gp-btn-${targetId}`)?.classList.add('selected');
+    } else {
+        document.getElementById('gp-none-btn')?.classList.add('selected');
+    }
+    // Lock all passive buttons after guess
+    document.querySelectorAll('.gp-btn, #gp-none-btn').forEach(b => b.disabled = true);
+    document.getElementById('gp-confirmed').classList.remove('hidden');
 }
 
 // ─── Mafia Chat ───────────────────────────────────────────────────────────────
@@ -671,13 +696,30 @@ socket.on('night-phase-start', ({ round }) => {
 });
 
 socket.on('ghost-night-turn', ({ alivePlayers, timeLeft }) => {
-    // Eliminated players get the ghost guess panel instead of the wait panel
     showGhostGuessPanel(alivePlayers);
-    startNightRing(timeLeft || 30); // show the same countdown as alive players
+    startNightRing(timeLeft || 30);
     addLog('👻 As a ghost, predict who the Mafia will eliminate tonight!', 'safe-ev');
 });
 
+socket.on('ghost-passive-turn', ({ alivePlayers }) => {
+    // Show the persistent guess section below the wait panel for non-ability dead players
+    const section = document.getElementById('ghost-passive-section');
+    section.classList.remove('hidden');
+    document.getElementById('gp-confirmed').classList.add('hidden');
+    // Re-enable all buttons (fresh night)
+    document.querySelectorAll('.gp-btn, #gp-none-btn').forEach(b => b.disabled = false);
+    document.querySelector('#gp-none-btn')?.classList.remove('selected');
+    const grid = document.getElementById('gp-grid');
+    grid.innerHTML = alivePlayers.map(p => `
+        <button class="gp-btn" id="gp-btn-${p.id}" onclick="submitPassiveGuess('${p.id}')">
+            ${makeAvatar(p.name, 22)}
+            <span>${escHtml(p.name)}</span>
+        </button>
+    `).join('');
+});
+
 socket.on('ghost-guess-ack', () => {
+    // Timed ghost panel confirmation
     document.getElementById('gg-confirmed').classList.remove('hidden');
 });
 

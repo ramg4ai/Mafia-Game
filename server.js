@@ -448,9 +448,14 @@ function startNightPhase(room) {
   };
   room.ghostGuesses = {}; // Reset ghost predictions each night
 
-  io.to(room.code).emit('night-phase-start', {
-    round: room.round,
-  });
+  io.to(room.code).emit('night-phase-start', { round: room.round });
+
+  // Passive ghost guess for eliminated non-night-ability players (Civilian, Jester, etc.)
+  const ghostAlive = room.players.filter(p => p.alive).map(p => ({ id: p.id, name: p.name }));
+  for (const dead of room.players.filter(p => !p.alive && !NIGHT_ACTORS.has(p.role))) {
+    const sock = io.sockets.sockets.get(dead.id);
+    if (sock) sock.emit('ghost-passive-turn', { alivePlayers: ghostAlive });
+  }
 
   setTimeout(() => startNightTurn(room), 2000);
 }
@@ -797,6 +802,16 @@ io.on('connection', (socket) => {
     setTimeout(() => startNightTurn(room), 1500);
   });
 
+  socket.on('skip-vigilante-action', () => {
+    const room = rooms[socket.roomCode];
+    if (!room || room.phase !== 'night') return;
+    const vig = room.players.find(p => p.id === socket.id && p.role === 'VIGILANTE' && p.alive);
+    if (!vig) return;
+    clearTimeout(room.nightTimer);
+    io.to(room.code).emit('night-turn-skipped', { role: 'VIGILANTE' });
+    setTimeout(() => startNightTurn(room), 1500);
+  });
+
   socket.on('ghost-guess', ({ targetId }) => {
     const room = rooms[socket.roomCode];
     if (!room || room.phase !== 'night') return;
@@ -804,12 +819,15 @@ io.on('connection', (socket) => {
     if (!player) return;
     room.ghostGuesses[socket.id] = targetId;
     socket.emit('ghost-guess-ack');
-    // Advance turn immediately — ghost submitted their prediction
-    clearTimeout(room.nightTimer);
-    setTimeout(() => {
-      io.to(room.code).emit('night-turn-done', { role: player.role });
-      setTimeout(() => startNightTurn(room), 1000);
-    }, 600);
+    // Only timed ghost turns (night-ability roles) advance the turn on guess
+    // Passive ghosts (Civilian, Jester) just record and stay on the wait panel
+    if (NIGHT_ACTORS.has(player.role)) {
+      clearTimeout(room.nightTimer);
+      setTimeout(() => {
+        io.to(room.code).emit('night-turn-done', { role: player.role });
+        setTimeout(() => startNightTurn(room), 1000);
+      }, 600);
+    }
   });
 
   // ── Day Phase ─────────────────────────────────────────────────────────────
