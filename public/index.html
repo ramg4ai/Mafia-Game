@@ -87,11 +87,27 @@
 
         <div class="host-controls" id="host-controls">
           <div class="timer-setting">
-            <label for="discussion-timer">Discussion Time</label>
+            <label>Discussion Time</label>
             <div class="timer-controls">
               <button class="timer-btn" onclick="adjustTimer(-1)">−</button>
               <span id="timer-display">3 min</span>
               <button class="timer-btn" onclick="adjustTimer(1)">+</button>
+            </div>
+          </div>
+          <div class="timer-setting">
+            <label>Night Phase Timer</label>
+            <div class="timer-controls">
+              <button class="timer-btn" onclick="adjustNightTimer(-10)">−</button>
+              <span id="night-timer-display">30 sec</span>
+              <button class="timer-btn" onclick="adjustNightTimer(10)">+</button>
+            </div>
+          </div>
+          <div class="timer-setting">
+            <label>Vote Timer</label>
+            <div class="timer-controls">
+              <button class="timer-btn" onclick="adjustVoteTimer(-10)">−</button>
+              <span id="vote-timer-display">30 sec</span>
+              <button class="timer-btn" onclick="adjustVoteTimer(10)">+</button>
             </div>
           </div>
           <button id="btn-start-game" class="btn-primary btn-start" onclick="startGame()" disabled>

@@ -15,6 +15,8 @@ const state = {
     isHost: false,
     isMafia: false,
     discussionMinutes: 3,
+    nightPhaseSeconds: 30,
+    voteSeconds: 30,
     currentNightRole: null,
     selectedTarget: null,
     allTargets: [],      // full target list including self (for Joker re-render)
@@ -22,6 +24,8 @@ const state = {
     hasVoted: false,
     isAlive: true,
     players: [],
+    mafiaAlliesHtml: null,
+    mafiaAlliesSidebarHtml: null,
 };
 
 // ─── Role visuals ───────────────────────────────────────────────────────────
@@ -125,10 +129,32 @@ function adjustTimer(delta) {
     socket.emit('set-timer', { minutes: next });
 }
 
+function adjustNightTimer(delta) {
+    if (!state.isHost) return;
+    const next = Math.min(120, Math.max(10, state.nightPhaseSeconds + delta));
+    socket.emit('set-night-timer', { seconds: next });
+}
+
+function adjustVoteTimer(delta) {
+    if (!state.isHost) return;
+    const next = Math.min(60, Math.max(10, state.voteSeconds + delta));
+    socket.emit('set-vote-timer', { seconds: next });
+}
+
 function updateTimerDisplay(minutes) {
     state.discussionMinutes = minutes;
     document.getElementById('timer-display').textContent = `${minutes} min`;
 }
+
+socket.on('night-timer-updated', ({ seconds }) => {
+    state.nightPhaseSeconds = seconds;
+    document.getElementById('night-timer-display').textContent = `${seconds} sec`;
+});
+
+socket.on('vote-timer-updated', ({ seconds }) => {
+    state.voteSeconds = seconds;
+    document.getElementById('vote-timer-display').textContent = `${seconds} sec`;
+});
 
 function startGame() {
     socket.emit('start-game');
@@ -165,6 +191,18 @@ function flipRoleCard() {
     // Show the persistent role sidebar only after the player has seen their role
     document.getElementById('role-sidebar').classList.remove('hidden');
     document.body.classList.add('has-role');
+
+    // Reveal Mafia allies only now (data was stored when mafia-reveal fired)
+    if (state.mafiaAlliesHtml !== null) {
+        const box = document.getElementById('mafia-reveal-box');
+        box.classList.remove('hidden');
+        document.getElementById('mafia-allies-list').innerHTML = state.mafiaAlliesHtml;
+
+        const rsAllies = document.getElementById('rs-allies');
+        rsAllies.classList.remove('hidden');
+        document.getElementById('rs-allies-list').innerHTML = state.mafiaAlliesSidebarHtml;
+    }
+
     setTimeout(() => {
         document.getElementById('btn-goto-game').classList.remove('hidden');
     }, 900);
@@ -278,7 +316,7 @@ function startDiscussTimer(seconds) {
 }
 
 // ─── Night Action Panel ───────────────────────────────────────────────────────
-function showNightActionPanel(role, targets) {
+function showNightActionPanel(role, targets, timeLeft = 30) {
     hideAllPanels();
     const panel = document.getElementById('night-action-panel');
     panel.classList.remove('hidden');
@@ -315,7 +353,7 @@ function showNightActionPanel(role, targets) {
 
     state.selectedTarget = null;
     document.getElementById('action-confirm').classList.add('hidden');
-    startNightRing(30);
+    startNightRing(timeLeft);
 }
 
 function selectTarget(id, name) {
@@ -582,19 +620,14 @@ socket.on('role-assigned', ({ role, roleKey, group, description }) => {
 });
 
 socket.on('mafia-reveal', ({ mafiaNames }) => {
-    // Flip screen reveal box
-    const box = document.getElementById('mafia-reveal-box');
-    box.classList.remove('hidden');
     const allies = mafiaNames.filter(n => n !== state.myName);
-    const alliesHtml = allies.length > 0
+
+    // Store HTML to render — both boxes shown only after card is flipped
+    state.mafiaAlliesHtml = allies.length > 0
         ? allies.map(n => `<div class="ally-chip">${escHtml(n)}</div>`).join('')
         : '<span style="color:var(--text3);font-size:0.85rem;">You are the only Mafia member.</span>';
-    document.getElementById('mafia-allies-list').innerHTML = alliesHtml;
 
-    // Persistent sidebar allies
-    const rsAllies = document.getElementById('rs-allies');
-    rsAllies.classList.remove('hidden');
-    document.getElementById('rs-allies-list').innerHTML = allies.length > 0
+    state.mafiaAlliesSidebarHtml = allies.length > 0
         ? allies.map(n => `<div class="rs-ally-chip">${escHtml(n)}</div>`).join('')
         : '<span style="color:var(--text3);font-size:0.76rem;">Solo Mafia</span>';
 });
@@ -617,7 +650,7 @@ socket.on('night-turn', ({ role, actorNames, timeLeft }) => {
 socket.on('your-night-turn', ({ role, targets, timeLeft }) => {
     state.currentNightRole = role;
     state.isAlive = true;
-    showNightActionPanel(role, targets);
+    showNightActionPanel(role, targets, timeLeft);
     addLog(`It's your turn to act as ${role === 'MAFIA_GROUP' ? 'Mafia' : role}.`, 'safe-ev');
 });
 

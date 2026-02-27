@@ -270,7 +270,7 @@ function startNightTurn(room) {
   io.to(room.code).emit('night-turn', {
     role: current.role,
     actorNames,
-    timeLeft: 30,
+    timeLeft: room.nightPhaseSeconds,
   });
 
   // Send action prompt only to actors
@@ -289,11 +289,11 @@ function startNightTurn(room) {
           return true;
         })
         .map(p => ({ id: p.id, name: p.name, isSelf: p.id === player.id }));
-      sock.emit('your-night-turn', { role: current.role, targets: alivePlayers, timeLeft: 30 });
+      sock.emit('your-night-turn', { role: current.role, targets: alivePlayers, timeLeft: room.nightPhaseSeconds });
     }
   }
 
-  // 30 second timeout — auto-skip; re-finalise mafia kill in case of partial votes
+  // Auto-skip timeout — uses host-configured nightPhaseSeconds
   room.nightTimer = setTimeout(() => {
     if (current.role === 'MAFIA_GROUP') {
       room.nightActions.mafiaKill = resolveMafiaVotes(room.nightActions.mafiaVotes);
@@ -305,15 +305,13 @@ function startNightTurn(room) {
       (current.role === 'JOKER' && room.nightActions.jokerAction?.action === 'investigate');
 
     if (alreadyActed) {
-      // Timer expired naturally after investigation — don't log a skip
       io.to(room.code).emit('night-turn-done', { role: current.role });
     } else {
-      // Role truly did nothing — log the skip
       io.to(room.code).emit('night-turn-skipped', { role: current.role });
     }
 
     startNightTurn(room);
-  }, 31000);
+  }, (room.nightPhaseSeconds + 1) * 1000);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -340,10 +338,10 @@ function startVoting(room) {
 
   io.to(room.code).emit('voting-start', {
     players: room.players.filter(p => p.alive).map(p => ({ id: p.id, name: p.name })),
-    timeLeft: 30,
+    timeLeft: room.voteSeconds,
   });
 
-  room.votingTimer = setTimeout(() => resolveVotes(room), 31000);
+  room.votingTimer = setTimeout(() => resolveVotes(room), (room.voteSeconds + 1) * 1000);
 }
 
 function resolveVotes(room) {
@@ -478,6 +476,8 @@ io.on('connection', (socket) => {
       phase: 'lobby',
       players: [player],
       discussionMinutes: 3,
+      nightPhaseSeconds: 30,
+      voteSeconds: 30,
       round: 1,
       nightActed: new Set(),
       nightActions: {},
@@ -543,6 +543,24 @@ io.on('connection', (socket) => {
     if (!player?.isHost) return;
     room.discussionMinutes = Math.min(5, Math.max(1, parseInt(minutes)));
     socket.emit('timer-updated', { minutes: room.discussionMinutes });
+  });
+
+  socket.on('set-night-timer', ({ seconds }) => {
+    const room = rooms[socket.roomCode];
+    if (!room) return;
+    const player = room.players.find(p => p.id === socket.id);
+    if (!player?.isHost) return;
+    room.nightPhaseSeconds = Math.min(120, Math.max(10, Math.round(parseInt(seconds) / 10) * 10));
+    socket.emit('night-timer-updated', { seconds: room.nightPhaseSeconds });
+  });
+
+  socket.on('set-vote-timer', ({ seconds }) => {
+    const room = rooms[socket.roomCode];
+    if (!room) return;
+    const player = room.players.find(p => p.id === socket.id);
+    if (!player?.isHost) return;
+    room.voteSeconds = Math.min(60, Math.max(10, Math.round(parseInt(seconds) / 10) * 10));
+    socket.emit('vote-timer-updated', { seconds: room.voteSeconds });
   });
 
   // ── Start Game ────────────────────────────────────────────────────────────
