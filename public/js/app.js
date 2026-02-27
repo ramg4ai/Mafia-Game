@@ -241,7 +241,8 @@ function updatePhaseBanner(icon, name, sub, timer = '') {
 
 function hideAllPanels() {
     ['night-action-panel', 'night-wait-panel', 'night-timer-ring',
-        'day-discuss-panel', 'voting-panel', 'investigation-popup'].forEach(id => {
+        'day-discuss-panel', 'voting-panel', 'investigation-popup',
+        'night-outcome-splash', 'ghost-guess-panel'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.classList.add('hidden');
         });
@@ -484,12 +485,40 @@ function closeInvestigation() {
 }
 
 function doneInvestigation() {
-    // Tell the server to end this turn early
     socket.emit('investigation-done');
-    // Immediately transition to wait panel
     clearInterval(nightRingInterval);
     hideAllPanels();
     showNightWaitPanel('Your action has been submitted. Waiting for others...');
+}
+
+// ── Ghost Guess (eliminated players only) ─────────────────────────────────
+
+function showGhostGuessPanel(alivePlayers) {
+    hideAllPanels();
+    const panel = document.getElementById('ghost-guess-panel');
+    panel.classList.remove('hidden');
+    document.getElementById('gg-confirmed').classList.add('hidden');
+    document.getElementById('gg-none-btn').disabled = false;
+
+    const grid = document.getElementById('gg-grid');
+    grid.innerHTML = alivePlayers.map(p => `
+        <button class="gg-btn" id="gg-btn-${p.id}"
+            onclick="submitGhostGuess('${p.id}')">
+            ${makeAvatar(p.name, 26)}
+            <span>${escHtml(p.name)}</span>
+        </button>
+    `).join('');
+}
+
+function submitGhostGuess(targetId) {
+    socket.emit('ghost-guess', { targetId });
+    // Highlight selection
+    document.querySelectorAll('.gg-btn').forEach(b => b.classList.remove('selected'));
+    if (targetId !== 'none') {
+        document.getElementById(`gg-btn-${targetId}`)?.classList.add('selected');
+    } else {
+        document.getElementById('gg-none-btn')?.classList.add('selected');
+    }
 }
 
 // ─── Mafia Chat ───────────────────────────────────────────────────────────────
@@ -641,6 +670,17 @@ socket.on('night-phase-start', ({ round }) => {
     showNightWaitPanel('The village sleeps...');
 });
 
+socket.on('ghost-night-turn', ({ alivePlayers, timeLeft }) => {
+    // Eliminated players get the ghost guess panel instead of the wait panel
+    showGhostGuessPanel(alivePlayers);
+    startNightRing(timeLeft || 30); // show the same countdown as alive players
+    addLog('👻 As a ghost, predict who the Mafia will eliminate tonight!', 'safe-ev');
+});
+
+socket.on('ghost-guess-ack', () => {
+    document.getElementById('gg-confirmed').classList.remove('hidden');
+});
+
 socket.on('night-turn', ({ role, actorNames, timeLeft }) => {
     const roleLabel = role === 'MAFIA_GROUP' ? 'Mafia' : role;
     document.getElementById('night-turn-status').textContent = `${roleLabel} is deciding...`;
@@ -661,27 +701,55 @@ socket.on('night-turn-done', ({ role }) => {
 
 socket.on('night-turn-skipped', ({ role }) => {
     addLog(`${role === 'MAFIA_GROUP' ? 'Mafia' : role} skipped their action.`);
-    // Timer expired — ensure any open action panel (e.g. investigation result) is cleared
     clearInterval(nightRingInterval);
     hideAllPanels();
     showNightWaitPanel('Waiting for the night to pass...');
 });
 
-socket.on('night-resolved', ({ eliminated, events }) => {
+socket.on('night-resolved', ({ eliminated, events, correctGuessers }) => {
     events.forEach(ev => addLog(ev.message, ev.type === 'save' ? 'safe-ev' : ''));
-    if (eliminated.length === 0) {
-        addLog('Nobody was eliminated overnight. The village breathes a sigh of relief.', 'safe-ev');
-    } else {
+
+    // Update player board
+    if (eliminated.length > 0) {
         eliminated.forEach(name => {
             addLog(`☠️ ${name} was eliminated during the night.`, 'important');
             if (name === state.myName) state.isAlive = false;
         });
-        // Mark eliminated players dead in state and re-render the board immediately
         state.players = state.players.map(p => ({
             ...p,
             alive: eliminated.includes(p.name) ? false : p.alive,
         }));
         renderPlayersBoard(state.players);
+    } else {
+        addLog('Nobody was eliminated overnight. The village breathes a sigh of relief.', 'safe-ev');
+    }
+
+    // Show night outcome splash
+    hideAllPanels();
+    const splash = document.getElementById('night-outcome-splash');
+    splash.classList.remove('hidden');
+
+    if (eliminated.length > 0) {
+        document.getElementById('nos-dawn-icon').textContent = '☠️';
+        document.getElementById('nos-title').textContent = 'Night Falls Silent…';
+        document.getElementById('nos-results').innerHTML = eliminated
+            .map(name => `<div class="nos-card eliminated"><span>☠️ <strong>${escHtml(name.trim())}</strong> was found dead at dawn.</span></div>`)
+            .join('');
+    } else {
+        document.getElementById('nos-dawn-icon').textContent = '🌅';
+        document.getElementById('nos-title').textContent = 'Dawn Breaks…';
+        document.getElementById('nos-results').innerHTML =
+            `<div class="nos-card safe">💚 No one was killed tonight. The village is safe… for now.</div>`;
+    }
+
+    // Ghost Activity Detected section
+    const ghostSection = document.getElementById('nos-ghost-section');
+    if (correctGuessers && correctGuessers.length > 0) {
+        ghostSection.classList.remove('hidden');
+        document.getElementById('nos-ghost-names').innerHTML =
+            correctGuessers.map(n => `<span class="nos-ghost-chip">👻 ${escHtml(n)} made a haunted prediction!</span>`).join('');
+    } else {
+        ghostSection.classList.add('hidden');
     }
 });
 

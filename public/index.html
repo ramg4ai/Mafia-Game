@@ -252,6 +252,37 @@
           <p id="night-turn-status" class="turn-status"></p>
         </div>
 
+        <!-- Night Outcome Splash (shown 5 sec after night resolves) -->
+        <div id="night-outcome-splash" class="night-outcome-splash hidden">
+          <div class="nos-dawn-icon" id="nos-dawn-icon">🌅</div>
+          <h2 class="nos-title" id="nos-title">Dawn Breaks…</h2>
+          <div class="nos-results" id="nos-results"></div>
+          <!-- Ghost activity section — only rendered if correct guessers exist -->
+          <div id="nos-ghost-section" class="nos-ghost-section hidden">
+            <hr class="nos-ghost-hr" />
+            <p class="nos-ghost-label">👻 Ghost Activity Detected</p>
+            <div class="nos-ghost-names" id="nos-ghost-names"></div>
+          </div>
+        </div>
+
+        <!-- Ghost Guess Panel (eliminated players only, shown during night) -->
+        <div id="ghost-guess-panel" class="ghost-guess-panel hidden">
+          <div class="gg-header">
+            <span class="gg-icon">👻</span>
+            <div>
+              <p class="gg-title">Ghost Prediction</p>
+              <p class="gg-sub">Who will the Mafia claim tonight?</p>
+            </div>
+          </div>
+          <div class="gg-grid" id="gg-grid"></div>
+          <button class="gg-none-btn" id="gg-none-btn" onclick="submitGhostGuess('none')">
+            🕊️ No one will be killed
+          </button>
+          <div class="gg-confirmed hidden" id="gg-confirmed">
+            <span>✅ Prediction locked in. Watch and see…</span>
+          </div>
+        </div>
+
         <!-- Night Timer Ring (for active actors) -->
         <div id="night-timer-ring" class="timer-ring-wrap hidden">
           <svg class="timer-ring" viewBox="0 0 100 100">

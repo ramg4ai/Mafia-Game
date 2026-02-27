@@ -128,24 +128,32 @@ function checkWinCondition(room) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function getNextNightActor(room) {
-  const alivePlayers = room.players.filter(p => p.alive);
-
   for (const roleKey of NIGHT_ORDER) {
     if (room.nightActed.has(roleKey)) continue;
     if (!NIGHT_ACTORS.has(roleKey)) continue;
 
     if (roleKey === 'MAFIA' || roleKey === 'TRAITOR') {
       // Mafia & Traitor act together as a group
-      const mafiaGroup = alivePlayers.filter(p => ROLES[p.role].group === 'mafia');
-      if (mafiaGroup.length > 0 && !room.nightActed.has('MAFIA_GROUP')) {
+      const mafiaAlive = room.players.filter(p => ROLES[p.role].group === 'mafia' && p.alive);
+      const mafiaDead = room.players.filter(p => ROLES[p.role].group === 'mafia' && !p.alive);
+      if (!room.nightActed.has('MAFIA_GROUP')) {
         room.nightActed.add('MAFIA_GROUP');
-        return { group: 'MAFIA_GROUP', players: mafiaGroup, role: 'MAFIA_GROUP' };
+        if (mafiaAlive.length > 0) {
+          return { role: 'MAFIA_GROUP', players: mafiaAlive, isGhost: false };
+        } else if (mafiaDead.length > 0) {
+          return { role: 'MAFIA_GROUP', players: mafiaDead, isGhost: true };
+        }
       }
     } else {
-      const actor = alivePlayers.find(p => p.role === roleKey);
-      if (actor) {
+      const aliveActor = room.players.find(p => p.role === roleKey && p.alive);
+      if (aliveActor) {
         room.nightActed.add(roleKey);
-        return { group: null, players: [actor], role: roleKey };
+        return { role: roleKey, players: [aliveActor], isGhost: false };
+      }
+      const deadActor = room.players.find(p => p.role === roleKey && !p.alive);
+      if (deadActor) {
+        room.nightActed.add(roleKey);
+        return { role: roleKey, players: [deadActor], isGhost: true };
       }
     }
   }
@@ -182,7 +190,6 @@ function resolveNightActions(room) {
     const target = room.players.find(p => p.id === room.nightActions.doctorSave);
     if (target && target.killFlagged) {
       target.killFlagged = false;
-      events.push({ type: 'save', message: 'The Doctor saved someone tonight!' });
     }
   }
 
@@ -212,7 +219,6 @@ function resolveNightActions(room) {
       if (ROLES[target.role].group === 'civilian') {
         // Vigilante dies instead
         vigilante.killFlagged = true;
-        events.push({ type: 'info', message: 'The Vigilante pulled the trigger but their conscience paid the price...' });
       } else {
         target.killFlagged = true;
       }
@@ -234,7 +240,21 @@ function resolveNightActions(room) {
     }
   }
 
-  return { eliminated, events };
+  // Score ghost guesses
+  const correctGuessers = [];
+  for (const [playerId, targetId] of Object.entries(room.ghostGuesses)) {
+    const guesser = room.players.find(p => p.id === playerId);
+    if (!guesser) continue;
+    const correct =
+      (targetId === 'none' && eliminated.length === 0) ||
+      (targetId !== 'none' && eliminated.some(name => {
+        const target = room.players.find(p => p.id === targetId);
+        return target && target.name === name;
+      }));
+    if (correct) correctGuessers.push(guesser.name);
+  }
+
+  return { eliminated, events, correctGuessers };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -248,10 +268,10 @@ function startNightTurn(room) {
 
   if (!current) {
     // All night actors done → resolve and start day
-    const { eliminated, events } = resolveNightActions(room);
+    const { eliminated, events, correctGuessers } = resolveNightActions(room);
     room.phase = 'day-start';
 
-    io.to(room.code).emit('night-resolved', { eliminated, events });
+    io.to(room.code).emit('night-resolved', { eliminated, events, correctGuessers });
 
     const winResult = checkWinCondition(room);
     if (winResult) {
@@ -259,59 +279,65 @@ function startNightTurn(room) {
     }
 
     // Start day phase after a short delay
-    setTimeout(() => startDayPhase(room), 3000);
+    setTimeout(() => startDayPhase(room), 6000);
     return;
   }
 
-  // Tell all clients whose turn it is
-  const actorIds = current.players.map(p => p.id);
-  const actorNames = current.players.map(p => p.name);
-
+  // Tell all clients whose turn it is (same message regardless of ghost/alive)
   io.to(room.code).emit('night-turn', {
     role: current.role,
-    actorNames,
+    actorNames: current.players.map(p => p.name),
     timeLeft: room.nightPhaseSeconds,
   });
 
-  // Send action prompt only to actors
-  for (const player of current.players) {
-    const sock = io.sockets.sockets.get(player.id);
-    if (sock) {
-      // Doctor can protect themselves; Joker receives self too (client filters by action type)
-      const canTargetSelf = current.role === 'DOCTOR' || current.role === 'JOKER';
-      const alivePlayers = room.players
-        .filter(p => {
-          if (!p.alive) return false;
-          // Mafia can only target non-Mafia players (not their own group)
-          if (current.role === 'MAFIA_GROUP' && ROLES[p.role].group === 'mafia') return false;
-          // Self-targeting: only allowed for Doctor and Joker
-          if (!canTargetSelf && p.id === player.id) return false;
-          return true;
-        })
-        .map(p => ({ id: p.id, name: p.name, isSelf: p.id === player.id }));
-      sock.emit('your-night-turn', { role: current.role, targets: alivePlayers, timeLeft: room.nightPhaseSeconds });
-    }
-  }
-
-  // Auto-skip timeout — uses host-configured nightPhaseSeconds
-  room.nightTimer = setTimeout(() => {
-    if (current.role === 'MAFIA_GROUP') {
-      room.nightActions.mafiaKill = resolveMafiaVotes(room.nightActions.mafiaVotes);
+  if (current.isGhost) {
+    // ── Ghost turn: dead role player gets guessing panel, not action panel ──
+    const alivePlayers = room.players.filter(p => p.alive).map(p => ({ id: p.id, name: p.name }));
+    for (const player of current.players) {
+      const sock = io.sockets.sockets.get(player.id);
+      if (sock) sock.emit('ghost-night-turn', { alivePlayers, timeLeft: room.nightPhaseSeconds });
     }
 
-    // Check if the role already completed their action (investigation roles keep timer running)
-    const alreadyActed =
-      (current.role === 'POLICE' && room.nightActions.policeInvestigate) ||
-      (current.role === 'JOKER' && room.nightActions.jokerAction?.action === 'investigate');
-
-    if (alreadyActed) {
+    room.nightTimer = setTimeout(() => {
+      // Ghost timer expired — advance silently (no skip log)
       io.to(room.code).emit('night-turn-done', { role: current.role });
-    } else {
-      io.to(room.code).emit('night-turn-skipped', { role: current.role });
+      startNightTurn(room);
+    }, (room.nightPhaseSeconds + 1) * 1000);
+
+  } else {
+    // ── Normal alive turn: send action prompt to actor(s) ──
+    for (const player of current.players) {
+      const sock = io.sockets.sockets.get(player.id);
+      if (sock) {
+        const canTargetSelf = current.role === 'DOCTOR' || current.role === 'JOKER';
+        const targets = room.players
+          .filter(p => {
+            if (!p.alive) return false;
+            if (current.role === 'MAFIA_GROUP' && ROLES[p.role].group === 'mafia') return false;
+            if (!canTargetSelf && p.id === player.id) return false;
+            return true;
+          })
+          .map(p => ({ id: p.id, name: p.name, isSelf: p.id === player.id }));
+        sock.emit('your-night-turn', { role: current.role, targets, timeLeft: room.nightPhaseSeconds });
+      }
     }
 
-    startNightTurn(room);
-  }, (room.nightPhaseSeconds + 1) * 1000);
+    room.nightTimer = setTimeout(() => {
+      if (current.role === 'MAFIA_GROUP') {
+        room.nightActions.mafiaKill = resolveMafiaVotes(room.nightActions.mafiaVotes);
+      }
+      const alreadyActed =
+        (current.role === 'POLICE' && room.nightActions.policeInvestigate) ||
+        (current.role === 'JOKER' && room.nightActions.jokerAction?.action === 'investigate');
+
+      if (alreadyActed) {
+        io.to(room.code).emit('night-turn-done', { role: current.role });
+      } else {
+        io.to(room.code).emit('night-turn-skipped', { role: current.role });
+      }
+      startNightTurn(room);
+    }, (room.nightPhaseSeconds + 1) * 1000);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -420,6 +446,7 @@ function startNightPhase(room) {
     jokerAction: null,
     vigilanteKill: null,
   };
+  room.ghostGuesses = {}; // Reset ghost predictions each night
 
   io.to(room.code).emit('night-phase-start', {
     round: room.round,
@@ -481,6 +508,7 @@ io.on('connection', (socket) => {
       round: 1,
       nightActed: new Set(),
       nightActions: {},
+      ghostGuesses: {},
       votes: {},
       nightTimer: null,
       dayTimer: null,
@@ -767,6 +795,21 @@ io.on('connection', (socket) => {
     clearTimeout(room.nightTimer);
     io.to(room.code).emit('night-turn-done', { role: 'VIGILANTE' });
     setTimeout(() => startNightTurn(room), 1500);
+  });
+
+  socket.on('ghost-guess', ({ targetId }) => {
+    const room = rooms[socket.roomCode];
+    if (!room || room.phase !== 'night') return;
+    const player = room.players.find(p => p.id === socket.id && !p.alive);
+    if (!player) return;
+    room.ghostGuesses[socket.id] = targetId;
+    socket.emit('ghost-guess-ack');
+    // Advance turn immediately — ghost submitted their prediction
+    clearTimeout(room.nightTimer);
+    setTimeout(() => {
+      io.to(room.code).emit('night-turn-done', { role: player.role });
+      setTimeout(() => startNightTurn(room), 1000);
+    }, 600);
   });
 
   // ── Day Phase ─────────────────────────────────────────────────────────────
