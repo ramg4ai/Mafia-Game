@@ -392,7 +392,11 @@ function resolveVotes(room) {
 
   let eliminatedPlayer = null;
 
-  if (topCandidates.length === 1 && maxVotes > 0) {
+  // When more than 2 players alive: need at least 2 votes to eliminate
+  const aliveCount = room.players.filter(p => p.alive).length;
+  const minVotesRequired = aliveCount > 2 ? 2 : 1;
+
+  if (topCandidates.length === 1 && maxVotes >= minVotesRequired) {
     const target = room.players.find(p => p.id === topCandidates[0]);
     if (target) {
       // Jester check
