@@ -242,7 +242,8 @@ function updatePhaseBanner(icon, name, sub, timer = '') {
 function hideAllPanels() {
     ['night-action-panel', 'night-wait-panel', 'night-timer-ring',
         'day-discuss-panel', 'voting-panel', 'investigation-popup',
-        'night-outcome-splash', 'ghost-guess-panel'].forEach(id => {
+        'night-outcome-splash', 'ghost-guess-panel',
+        'day-outcome-splash'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.classList.add('hidden');
         });
@@ -824,6 +825,9 @@ socket.on('voting-start', ({ players, timeLeft }) => {
 
     renderVoteGrid(players);
     document.getElementById('vote-status').textContent = `0 / ${players.length} voted`;
+    // Reset feed for this round
+    document.getElementById('vote-feed').innerHTML = '';
+    document.getElementById('vote-feed-wrap').classList.add('hidden');
 
     const abstainBtn = document.getElementById('btn-abstain');
     if (!state.isAlive) {
@@ -839,30 +843,70 @@ socket.on('voting-start', ({ players, timeLeft }) => {
     addLog('Voting has started! You have 30 seconds to cast your vote.', 'important');
 });
 
-socket.on('vote-update', ({ votedCount, totalCount }) => {
+socket.on('vote-cast', ({ voterName, targetName, votedCount, totalCount }) => {
+    // Update count
     document.getElementById('vote-status').textContent = `${votedCount} / ${totalCount} voted`;
+    // Show feed section on first vote
+    document.getElementById('vote-feed-wrap').classList.remove('hidden');
+    // Append animated entry
+    const feed = document.getElementById('vote-feed');
+    const item = document.createElement('div');
+    item.className = 'vote-feed-item';
+    const targetClass = targetName ? 'vs-player' : 'vs-abstain';
+    const targetText = targetName ? escHtml(targetName) : 'abstained';
+    item.innerHTML = `<span class="vfi-voter">${escHtml(voterName)}</span>
+        <span class="vfi-arrow">→</span>
+        <span class="vfi-target ${targetClass}">${targetText}</span>`;
+    feed.appendChild(item);
+    feed.scrollTop = feed.scrollHeight;
 });
 
-socket.on('vote-resolved', ({ eliminated, tie, votes, jesterWin }) => {
+socket.on('vote-resolved', ({ eliminated, tie, votes, voteDetails, noVoteNames, jesterWin }) => {
     hideAllPanels();
     clearInterval(voteRingInterval);
 
+    // Update player state
     if (eliminated) {
         if (eliminated === state.myName) state.isAlive = false;
-        // Mark voted-out player dead in state and refresh board immediately
         state.players = state.players.map(p => ({
-            ...p,
-            alive: p.name === eliminated ? false : p.alive,
+            ...p, alive: p.name === eliminated ? false : p.alive,
         }));
         renderPlayersBoard(state.players);
         addLog(`☠️ ${eliminated} was voted out${jesterWin ? ' — THE JESTER WINS!' : '!'}`, 'important');
     } else if (tie) {
-        addLog('🤝 The vote was tied — no one was eliminated.', 'safe-ev');
+        addLog('🤝 The vote was tied or lacked majority — no one was eliminated.', 'safe-ev');
     } else {
         addLog('No one was voted out this round.', 'safe-ev');
     }
 
-    showNightWaitPanel('Preparing for next round...');
+    // ── Build day outcome splash ──
+    const splash = document.getElementById('day-outcome-splash');
+    splash.classList.remove('hidden');
+
+    if (eliminated) {
+        document.getElementById('dos-icon').textContent = '⚀️';
+        document.getElementById('dos-title').textContent = 'The Village Has Spoken';
+        document.getElementById('dos-result').innerHTML =
+            `<div class="dos-result-card eliminated"><span>☠️ <strong>${escHtml(eliminated)}</strong> was voted out by the village${jesterWin ? ' — 🂣 THE JESTER WINS!' : ''}.</span></div>`;
+    } else {
+        document.getElementById('dos-icon').textContent = '🌍';
+        document.getElementById('dos-title').textContent = 'Everyone Survives the Day!';
+        document.getElementById('dos-result').innerHTML =
+            `<div class="dos-result-card safe"><span>💚 No one was eliminated. The village lives to see another night.</span></div>`;
+    }
+
+    // Vote breakdown
+    const bd = document.getElementById('dos-breakdown');
+    const rows = [];
+    (voteDetails || []).forEach(({ voterName, targetName }) => {
+        const cls = targetName ? 't-voted' : 't-abstain';
+        const txt = targetName ? `voted against <strong>${escHtml(targetName)}</strong>` : 'abstained';
+        rows.push(`<div class="dos-row"><span class="dr-voter">${escHtml(voterName)}</span><span class="dr-arrow">→</span><span class="dr-target ${cls}">${txt}</span></div>`);
+    });
+    (noVoteNames || []).forEach(name => {
+        rows.push(`<div class="dos-row"><span class="dr-voter">${escHtml(name)}</span><span class="dr-arrow">→</span><span class="dr-target t-novote">didn't vote</span></div>`);
+    });
+    bd.innerHTML = rows.join('');
 });
 
 // ── Player eliminated mid-game ────────────────────────────────────────────────

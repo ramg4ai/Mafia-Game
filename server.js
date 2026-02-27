@@ -361,6 +361,7 @@ function startDayPhase(room) {
 function startVoting(room) {
   room.phase = 'voting';
   room.votes = {};
+  room.voteLog = []; // ordered list of { voterName, targetName|null }
 
   io.to(room.code).emit('voting-start', {
     players: room.players.filter(p => p.alive).map(p => ({ id: p.id, name: p.name })),
@@ -392,9 +393,22 @@ function resolveVotes(room) {
 
   let eliminatedPlayer = null;
 
-  // When more than 2 players alive: need at least 2 votes to eliminate
-  const aliveCount = room.players.filter(p => p.alive).length;
+  // Build detailed vote log: who voted for whom
+  const alivePlayersList = room.players.filter(p => p.alive);
+  const aliveCount = alivePlayersList.length;
   const minVotesRequired = aliveCount > 2 ? 2 : 1;
+
+  // Voters who cast a vote
+  const voteDetails = room.voteLog.map(entry => ({
+    voterName: entry.voterName,
+    targetName: entry.targetName, // null = abstained
+  }));
+
+  // Alive players who never voted at all
+  const votedIds = new Set(Object.keys(room.votes));
+  const noVoteNames = alivePlayersList
+    .filter(p => !votedIds.has(p.id))
+    .map(p => p.name);
 
   if (topCandidates.length === 1 && maxVotes >= minVotesRequired) {
     const target = room.players.find(p => p.id === topCandidates[0]);
@@ -402,17 +416,13 @@ function resolveVotes(room) {
       // Jester check
       if (target.role === 'JESTER') {
         io.to(room.code).emit('vote-resolved', {
-          eliminated: target.name,
-          tie: false,
-          votes: tally,
-          jesterWin: true,
+          eliminated: target.name, tie: false,
+          votes: tally, voteDetails, noVoteNames, jesterWin: true,
         });
         return endGame(room, { winner: 'Jester', reason: `${target.name} was the Jester and was voted out!` });
       }
       target.alive = false;
       eliminatedPlayer = target.name;
-
-      // Remove from mafia chat
       if (ROLES[target.role].group === 'mafia') {
         io.sockets.sockets.get(target.id)?.leave(`mafia-${room.code}`);
       }
@@ -421,18 +431,18 @@ function resolveVotes(room) {
 
   io.to(room.code).emit('vote-resolved', {
     eliminated: eliminatedPlayer,
-    tie: topCandidates.length !== 1,
+    tie: topCandidates.length !== 1 || maxVotes < minVotesRequired,
     votes: tally,
+    voteDetails,
+    noVoteNames,
     jesterWin: false,
   });
 
   const winResult = checkWinCondition(room);
-  if (winResult) {
-    return endGame(room, winResult);
-  }
+  if (winResult) return endGame(room, winResult);
 
-  // Start next night
-  setTimeout(() => startNightPhase(room), 4000);
+  // 7s delay — leaves 5s for the day outcome splash before night starts
+  setTimeout(() => startNightPhase(room), 7000);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -859,10 +869,18 @@ io.on('connection', (socket) => {
 
     room.votes[socket.id] = targetId;
 
+    // Record for ordered vote log
+    const targetPlayer = targetId ? room.players.find(p => p.id === targetId) : null;
+    const entry = { voterName: voter.name, targetName: targetPlayer?.name || null };
+    room.voteLog.push(entry);
+
     const totalAlive = room.players.filter(p => p.alive).length;
     const totalVoted = Object.keys(room.votes).length;
 
-    io.to(room.code).emit('vote-update', {
+    // Live vote feed update
+    io.to(room.code).emit('vote-cast', {
+      voterName: voter.name,
+      targetName: entry.targetName, // null = abstained
       votedCount: totalVoted,
       totalCount: totalAlive,
     });

@@ -345,6 +345,22 @@
           <div class="vote-grid" id="vote-grid"></div>
           <div class="vote-status" id="vote-status">0 / 0 voted</div>
           <button class="btn-abstain" id="btn-abstain" onclick="castVote(null)">Abstain</button>
+
+          <!-- Live vote feed -->
+          <div class="vote-feed-wrap hidden" id="vote-feed-wrap">
+            <p class="vote-feed-label">🗳️ Live Votes</p>
+            <div class="vote-feed" id="vote-feed"></div>
+          </div>
+        </div>
+
+        <!-- Day Outcome Splash -->
+        <div id="day-outcome-splash" class="day-outcome-splash hidden">
+          <div class="dos-icon" id="dos-icon">☀️</div>
+          <h2 class="dos-title" id="dos-title">The Verdict</h2>
+          <div class="dos-result" id="dos-result"></div>
+          <hr class="dos-hr" />
+          <p class="dos-breakdown-label">Vote Breakdown</p>
+          <div class="dos-breakdown" id="dos-breakdown"></div>
         </div>
 
         <!-- Investigation Result Popup -->

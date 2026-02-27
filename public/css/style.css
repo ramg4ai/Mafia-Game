@@ -1889,6 +1889,190 @@ h3 {
   color: #c4b5fd;
 }
 
+/* ─── Live Vote Feed ─────────────────────────────────────────────────────────── */
+.vote-feed-wrap {
+  margin-top: 12px;
+  width: 100%;
+}
+
+.vote-feed-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text3);
+  margin-bottom: 6px;
+}
+
+.vote-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 160px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.vote-feed-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.78rem;
+  color: var(--text2);
+  animation: feedSlideIn 0.3s ease;
+}
+
+@keyframes feedSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.vfi-voter {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.vfi-arrow {
+  color: var(--text3);
+}
+
+.vfi-target.vs-player {
+  color: #fca5a5;
+  font-weight: 600;
+}
+
+.vfi-target.vs-abstain {
+  color: var(--text3);
+  font-style: italic;
+}
+
+/* ─── Day Outcome Splash ─────────────────────────────────────────────────────── */
+.day-outcome-splash {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 40px 28px 32px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  backdrop-filter: blur(10px);
+  animation: nosIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+  text-align: center;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.dos-icon {
+  font-size: 3rem;
+  filter: drop-shadow(0 0 18px rgba(250, 200, 30, 0.5));
+  animation: nosGlow 2s ease-in-out infinite alternate;
+}
+
+.dos-title {
+  font-family: 'Cinzel', serif;
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--gold);
+  margin: 0;
+}
+
+.dos-result {
+  width: 100%;
+  max-width: 420px;
+}
+
+.dos-result-card {
+  padding: 12px 18px;
+  border-radius: var(--radius);
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+.dos-result-card.eliminated {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #fca5a5;
+}
+
+.dos-result-card.safe {
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.25);
+  color: #86efac;
+}
+
+.dos-hr {
+  width: 100%;
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 2px 0;
+}
+
+.dos-breakdown-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text3);
+}
+
+.dos-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+  max-width: 420px;
+  text-align: left;
+}
+
+.dos-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  background: var(--bg3);
+  border-radius: var(--radius);
+  font-size: 0.8rem;
+  color: var(--text2);
+}
+
+.dos-row .dr-voter {
+  color: var(--text);
+  font-weight: 500;
+  min-width: 80px;
+}
+
+.dos-row .dr-arrow {
+  color: var(--text3);
+  font-size: 0.7rem;
+}
+
+
+
+
+.dos-row .dr-target.t-voted {
+  color: #fca5a5;
+}
+
+.dos-row .dr-target.t-abstain {
+  color: var(--text3);
+  font-style: italic;
+}
+
+.dos-row .dr-target.t-novote {
+  color: var(--text3);
+  font-style: italic;
+}
+
 /* ─── Night Outcome Splash ──────────────────────────────────────────────────── */
 .night-outcome-splash {
   display: flex;
