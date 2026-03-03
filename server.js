@@ -76,51 +76,39 @@ function assignRoles(playerCount) {
 
 function checkWinCondition(room) {
   const alivePlayers = room.players.filter(p => p.alive);
-  const aliveCount = alivePlayers.length;
 
-  const mafiaAlive = alivePlayers.filter(p => ROLES[p.role].group === 'mafia');
-  const civilianAlive = alivePlayers.filter(p => ROLES[p.role].group === 'civilian');
-  const neutralAlive = alivePlayers.filter(p => ROLES[p.role].group === 'neutral');
-  const jokerAlive = alivePlayers.find(p => p.role === 'JOKER');
+  const mafiaCount = alivePlayers.filter(p => ROLES[p.role].group === 'mafia').length;
+  const civilianCount = alivePlayers.filter(p => ROLES[p.role].group === 'civilian').length;
+  const neutralCount = alivePlayers.filter(p => ROLES[p.role].group === 'neutral').length;
 
-  // 2-player endings
-  if (aliveCount === 2) {
-    const roles = alivePlayers.map(p => p.role);
-    const has = (r) => roles.includes(r);
-
-    if (mafiaAlive.length >= 1 && civilianAlive.length >= 1) return { winner: 'Mafia', reason: 'Mafia outnumbers Civilians' };
-    if (mafiaAlive.length >= 1 && jokerAlive) return { winner: 'Mafia', reason: 'Mafia and Joker remain' };
-    if (has('MAFIA') && has('VIGILANTE')) return { winner: null, reason: 'Mutual destruction — no one wins' };
-    if (has('MAFIA') && has('JESTER')) return { winner: 'Mafia', reason: 'Mafia and Jester remain' };
-    if (civilianAlive.length >= 1 && jokerAlive) return { winner: 'Civilians', reason: 'Civilian and Joker remain' };
-    if (civilianAlive.length >= 1 && has('JESTER')) return { winner: 'Civilians', reason: 'Civilian and Jester remain' };
+  // Rule 1: Both Mafia and Civilian are zero, at least one Neutral → Neutral win
+  if (mafiaCount === 0 && civilianCount === 0 && neutralCount >= 1) {
+    return { winner: 'Neutrals', reason: 'Only Neutrals remain' };
   }
 
-  // 3-player endings
-  if (aliveCount === 3) {
-    if (mafiaAlive.length === 2 && civilianAlive.length === 1 && neutralAlive.length === 0) {
-      return { winner: 'Mafia', reason: '2 Mafia vs 1 Civilian' };
+  // Rule 2: No Civilians left → Mafia wins
+  if (civilianCount === 0) {
+    return { winner: 'Mafia', reason: 'All Civilians have been eliminated' };
+  }
+
+  // Rule 3: No Mafia left → Civilians win
+  if (mafiaCount === 0) {
+    return { winner: 'Civilians', reason: 'All Mafia have been eliminated' };
+  }
+
+  // Rule 4: Exactly one Civilian alive
+  if (civilianCount === 1) {
+    if (neutralCount >= 1) {
+      // At least one Neutral exists → game continues
+      return null;
+    } else {
+      // No Neutrals left → Mafia wins
+      return { winner: 'Mafia', reason: 'Mafia outnumbers the last Civilian' };
     }
   }
 
-  // General endings
-  if (mafiaAlive.length === 0 && neutralAlive.length === 0) return { winner: 'Civilians', reason: 'All Mafia eliminated' };
-  if (mafiaAlive.length === 0 && civilianAlive.length === 0) return { winner: 'Neutrals', reason: 'Only neutrals remain' };
-  if (civilianAlive.length === 0 && neutralAlive.length === 0) return { winner: 'Mafia', reason: 'All Civilians eliminated' };
-
-  // Joker conditions
-  if (jokerAlive) {
-    if (mafiaAlive.length === 0 && civilianAlive.length === 0) return { winner: 'Neutrals', reason: 'Only Neutrals remain' };
-    if (civilianAlive.length === 0 && mafiaAlive.length > 0 && neutralAlive.every(p => p.role !== 'JESTER')) return { winner: 'Mafia', reason: 'Joker sides with Mafia' };
-    if (mafiaAlive.length === 0 && civilianAlive.length > 0) return { winner: 'Civilians', reason: 'Joker sides with Civilians' };
-  }
-
-  // Mafia majority: if mafia >= all others they effectively win
-  if (mafiaAlive.length >= (civilianAlive.length + neutralAlive.length) && mafiaAlive.length > 0 && (civilianAlive.length + neutralAlive.length) > 0) {
-    return { winner: 'Mafia', reason: 'Mafia outnumbers remaining players' };
-  }
-
-  return null; // game continues
+  // Rule 5: All other conditions → game continues
+  return null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
