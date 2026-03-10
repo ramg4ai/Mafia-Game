@@ -313,7 +313,13 @@ function startNightTurn(room) {
     room.nightTimer = setTimeout(() => {
       if (current.role === 'MAFIA_GROUP') {
         room.nightActions.mafiaKill = resolveMafiaVotes(room.nightActions.mafiaVotes);
+        // Only "skipped" if no Mafia member voted at all
+        const anyVoted = Object.keys(room.nightActions.mafiaVotes).length > 0;
+        io.to(room.code).emit(anyVoted ? 'night-turn-done' : 'night-turn-skipped', { role: current.role });
+        startNightTurn(room);
+        return;
       }
+
       const alreadyActed =
         (current.role === 'POLICE' && room.nightActions.policeInvestigate) ||
         (current.role === 'JOKER' && room.nightActions.jokerAction?.action === 'investigate');
