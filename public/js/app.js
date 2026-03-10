@@ -477,7 +477,7 @@ function castVote(targetId) {
         addLog('You cast your vote.', 'safe-ev');
     } else {
         document.querySelectorAll('.vote-btn').forEach(b => b.disabled = true);
-        addLog('You abstained from voting.');
+        addLog('You skipped the vote.');
     }
     document.getElementById('btn-abstain').disabled = true;
 }
@@ -853,7 +853,7 @@ socket.on('vote-cast', ({ voterName, targetName, votedCount, totalCount }) => {
     const item = document.createElement('div');
     item.className = 'vote-feed-item';
     const targetClass = targetName ? 'vs-player' : 'vs-abstain';
-    const targetText = targetName ? escHtml(targetName) : 'abstained';
+    const targetText = targetName ? escHtml(targetName) : 'skipped vote';
     item.innerHTML = `<span class="vfi-voter">${escHtml(voterName)}</span>
         <span class="vfi-arrow">→</span>
         <span class="vfi-target ${targetClass}">${targetText}</span>`;
@@ -900,11 +900,11 @@ socket.on('vote-resolved', ({ eliminated, tie, votes, voteDetails, noVoteNames, 
     const rows = [];
     (voteDetails || []).forEach(({ voterName, targetName }) => {
         const cls = targetName ? 't-voted' : 't-abstain';
-        const txt = targetName ? `voted against <strong>${escHtml(targetName)}</strong>` : 'abstained';
+        const txt = targetName ? `voted against <strong>${escHtml(targetName)}</strong>` : 'skipped vote';
         rows.push(`<div class="dos-row"><span class="dr-voter">${escHtml(voterName)}</span><span class="dr-arrow">→</span><span class="dr-target ${cls}">${txt}</span></div>`);
     });
     (noVoteNames || []).forEach(name => {
-        rows.push(`<div class="dos-row"><span class="dr-voter">${escHtml(name)}</span><span class="dr-arrow">→</span><span class="dr-target t-novote">didn't vote</span></div>`);
+        rows.push(`<div class="dos-row"><span class="dr-voter">${escHtml(name)}</span><span class="dr-arrow">→</span><span class="dr-target t-novote">skipped vote</span></div>`);
     });
     bd.innerHTML = rows.join('');
 });
