@@ -920,7 +920,7 @@ socket.on('player-disconnected', ({ name }) => {
     renderPlayersBoard(players);
 });
 
-socket.on('investigation-result', ({ targetName, group, role }) => {
+socket.on('investigation-result', ({ targetName, group }) => {
     // Hide the selection UI
     document.getElementById('targets-grid').classList.add('hidden');
     document.getElementById('action-confirm').classList.add('hidden');
@@ -929,12 +929,12 @@ socket.on('investigation-result', ({ targetName, group, role }) => {
     // Build inline result inside the action panel
     const groupColor = group === 'mafia' ? '#fca5a5' : group === 'civilian' ? '#86efac' : '#fcd34d';
     const icon = group === 'mafia' ? '🩸' : group === 'civilian' ? '✅' : '⭐';
+    const groupLabel = group === 'mafia' ? 'Mafia' : group === 'civilian' ? 'Civilian' : 'Neutral';
 
     document.getElementById('invest-inline-icon').textContent = icon;
     document.getElementById('invest-inline-result').innerHTML =
-        `<strong style="color:${groupColor}">${escHtml(targetName)}</strong> belongs to the `
-        + `<strong style="color:${groupColor}">${capitalize(group)} Group</strong>`
-        + `<br><span style="color:var(--text3);font-size:0.82rem;">Role: ${escHtml(role)}</span>`;
+        `<strong style="color:${groupColor}">${escHtml(targetName)}</strong> is a `
+        + `<strong style="color:${groupColor}">${groupLabel}</strong>`;
 
     document.getElementById('invest-inline').classList.remove('hidden');
     addLog('Your investigation is complete.', 'safe-ev');

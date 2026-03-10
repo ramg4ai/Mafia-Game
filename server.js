@@ -755,7 +755,6 @@ io.on('connection', (socket) => {
     socket.emit('investigation-result', {
       targetName: target.name,
       group: revealedGroup,
-      role: revealedRole,
     });
 
     room.nightActions.policeInvestigate = targetId;
@@ -778,7 +777,6 @@ io.on('connection', (socket) => {
         socket.emit('investigation-result', {
           targetName: target.name,
           group: revealedGroup,
-          role: target.role === 'TRAITOR' ? 'Civilian' : ROLES[target.role].name,
         });
       }
       // Record action but keep timer running — client shows result inline
