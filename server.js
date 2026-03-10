@@ -373,6 +373,10 @@ function resolveVotes(room) {
     tally[votedFor] = (tally[votedFor] || 0) + 1;
   }
 
+  // Separate player votes from explicit skips
+  const skipCountFromVotes = tally['null'] || 0;
+  delete tally['null']; // Remove 'null' from candidates
+
   let maxVotes = 0;
   let topCandidates = [];
 
@@ -385,17 +389,13 @@ function resolveVotes(room) {
     }
   }
 
-  let eliminatedPlayer = null;
-
-  // Build detailed vote log: who voted for whom
   const alivePlayersList = room.players.filter(p => p.alive);
   const aliveCount = alivePlayersList.length;
-  const minVotesRequired = aliveCount > 2 ? 2 : 1;
 
   // Voters who cast a vote
   const voteDetails = room.voteLog.map(entry => ({
     voterName: entry.voterName,
-    targetName: entry.targetName, // null = abstained
+    targetName: entry.targetName, // null = explicit skip
   }));
 
   // Alive players who never voted at all
@@ -404,28 +404,41 @@ function resolveVotes(room) {
     .filter(p => !votedIds.has(p.id))
     .map(p => p.name);
 
-  if (topCandidates.length === 1 && maxVotes >= minVotesRequired) {
-    const target = room.players.find(p => p.id === topCandidates[0]);
-    if (target) {
-      // Jester check
-      if (target.role === 'JESTER') {
-        io.to(room.code).emit('vote-resolved', {
-          eliminated: target.name, tie: false,
-          votes: tally, voteDetails, noVoteNames, jesterWin: true,
-        });
-        return endGame(room, { winner: 'Jester', reason: `${target.name} was the Jester and was voted out!` });
-      }
-      target.alive = false;
-      eliminatedPlayer = target.name;
-      if (ROLES[target.role].group === 'mafia') {
-        io.sockets.sockets.get(target.id)?.leave(`mafia-${room.code}`);
+  // Total skips = explicit skips + no votes (failure to act)
+  const totalSkipCount = skipCountFromVotes + noVoteNames.length;
+
+  let eliminatedPlayer = null;
+  let tie = topCandidates.length !== 1;
+  let skippedOverride = false;
+
+  // New Rule: Elimination only happens if maxVotes > totalSkipCount
+  if (!tie && maxVotes > 0) {
+    if (maxVotes <= totalSkipCount) {
+      skippedOverride = true;
+    } else {
+      const target = room.players.find(p => p.id === topCandidates[0]);
+      if (target) {
+        // Jester check
+        if (target.role === 'JESTER') {
+          io.to(room.code).emit('vote-resolved', {
+            eliminated: target.name, tie: false, skippedOverride: false,
+            votes: tally, voteDetails, noVoteNames, jesterWin: true,
+          });
+          return endGame(room, { winner: 'Jester', reason: `${target.name} was the Jester and was voted out!` });
+        }
+        target.alive = false;
+        eliminatedPlayer = target.name;
+        if (ROLES[target.role].group === 'mafia') {
+          io.sockets.sockets.get(target.id)?.leave(`mafia-${room.code}`);
+        }
       }
     }
   }
 
   io.to(room.code).emit('vote-resolved', {
     eliminated: eliminatedPlayer,
-    tie: topCandidates.length !== 1 || maxVotes < minVotesRequired,
+    tie: tie,
+    skippedOverride: skippedOverride,
     votes: tally,
     voteDetails,
     noVoteNames,

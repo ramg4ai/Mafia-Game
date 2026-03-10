@@ -861,7 +861,7 @@ socket.on('vote-cast', ({ voterName, targetName, votedCount, totalCount }) => {
     feed.scrollTop = feed.scrollHeight;
 });
 
-socket.on('vote-resolved', ({ eliminated, tie, votes, voteDetails, noVoteNames, jesterWin }) => {
+socket.on('vote-resolved', ({ eliminated, tie, skippedOverride, votes, voteDetails, noVoteNames, jesterWin }) => {
     hideAllPanels();
     clearInterval(voteRingInterval);
 
@@ -873,6 +873,8 @@ socket.on('vote-resolved', ({ eliminated, tie, votes, voteDetails, noVoteNames, 
         }));
         renderPlayersBoard(state.players);
         addLog(`☠️ ${eliminated} was voted out${jesterWin ? ' — THE JESTER WINS!' : '!'}`, 'important');
+    } else if (skippedOverride) {
+        addLog('⏭️ Skip votes were equal or greater than player votes — no one was eliminated.', 'safe-ev');
     } else if (tie) {
         addLog('🤝 The vote was tied or lacked majority — no one was eliminated.', 'safe-ev');
     } else {
@@ -889,10 +891,11 @@ socket.on('vote-resolved', ({ eliminated, tie, votes, voteDetails, noVoteNames, 
         document.getElementById('dos-result').innerHTML =
             `<div class="dos-result-card eliminated"><span>☠️ <strong>${escHtml(eliminated)}</strong> was voted out by the village${jesterWin ? ' — 🂣 THE JESTER WINS!' : ''}.</span></div>`;
     } else {
-        document.getElementById('dos-icon').textContent = '🌍';
-        document.getElementById('dos-title').textContent = 'Everyone Survives the Day!';
+        document.getElementById('dos-icon').textContent = skippedOverride ? '⏭️' : '🌍';
+        document.getElementById('dos-title').textContent = skippedOverride ? 'Skipped Votes Prevail' : 'Everyone Survives the Day!';
+        const msg = skippedOverride ? 'Skip votes equalled or exceeded the top player votes. No one was eliminated.' : '💚 No one was eliminated. The village lives to see another night.';
         document.getElementById('dos-result').innerHTML =
-            `<div class="dos-result-card safe"><span>💚 No one was eliminated. The village lives to see another night.</span></div>`;
+            `<div class="dos-result-card safe"><span>${msg}</span></div>`;
     }
 
     // Vote breakdown
