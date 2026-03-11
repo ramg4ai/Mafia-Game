@@ -302,8 +302,14 @@ function renderPlayerList(players, hostName) {
   `).join('');
 
     const count = players.length;
-    const max = state.roleMode === 'custom' ? 20 : 10;
-    document.getElementById('player-count-badge').textContent = `${count}/${max}`;
+    const badge = document.getElementById('player-count-badge');
+    if (state.isHost) {
+        const max = state.roleMode === 'custom' ? 20 : 10;
+        badge.textContent = `${count}/${max}`;
+        badge.classList.remove('hidden');
+    } else {
+        badge.classList.add('hidden');
+    }
 
     if (state.isHost) {
         const startBtn = document.getElementById('btn-start-game');
@@ -764,11 +770,13 @@ socket.on('mode-updated', ({ mode }) => {
         document.getElementById('btn-start-game').classList.toggle('hidden', mode === 'custom');
         document.getElementById('btn-pick-roles').classList.toggle('hidden', mode === 'auto');
     }
-    // Update badge cap for all players
-    const badge = document.getElementById('player-count-badge');
-    if (badge) {
-        const currentCount = parseInt(badge.textContent.split('/')[0]) || 0;
-        badge.textContent = `${currentCount}/${mode === 'custom' ? 20 : 10}`;
+    // Update badge cap — only visible to host
+    if (state.isHost) {
+        const badge = document.getElementById('player-count-badge');
+        if (badge) {
+            const currentCount = parseInt(badge.textContent.split('/')[0]) || 0;
+            badge.textContent = `${currentCount}/${mode === 'custom' ? 20 : 10}`;
+        }
     }
 });
 
@@ -1006,7 +1014,7 @@ socket.on('voting-start', ({ players, timeLeft }) => {
     }
 
     startVoteRing(timeLeft);
-    addLog('Voting has started! You have 30 seconds to cast your vote.', 'important');
+    addLog('Voting has started!', 'important');
 });
 
 socket.on('vote-cast', ({ voterName, targetName, votedCount, totalCount }) => {
