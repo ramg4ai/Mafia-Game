@@ -110,10 +110,26 @@
               <button class="timer-btn" onclick="adjustVoteTimer(10)">+</button>
             </div>
           </div>
+
+          <!-- Role Selector Toggle -->
+          <div class="timer-setting role-mode-setting">
+            <label>Role Selector</label>
+            <div class="mode-toggle">
+              <button id="btn-mode-auto" class="mode-btn active" onclick="setMode('auto')">Auto</button>
+              <button id="btn-mode-custom" class="mode-btn" onclick="setMode('custom')">Custom</button>
+            </div>
+          </div>
+
+          <!-- Auto: Start Game -->
           <button id="btn-start-game" class="btn-primary btn-start" onclick="startGame()" disabled>
             Start Game
           </button>
-          <p class="start-hint">Need at least 6 players</p>
+          <!-- Custom: Pick Roles -->
+          <button id="btn-pick-roles" class="btn-primary btn-start hidden" onclick="pickRoles()" disabled>
+            Pick Roles
+          </button>
+
+          <p class="start-hint" id="start-hint">Need at least 6 players</p>
         </div>
       </div>
 
@@ -121,6 +137,58 @@
         <span>Share link:</span>
         <span id="share-url" class="share-url"></span>
         <button class="copy-btn small" onclick="copyShareLink()">Copy</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ╔══════════════════════════════════════╗ -->
+  <!-- ║         ROLE PICKER SCREEN          ║ -->
+  <!-- ╚══════════════════════════════════════╝ -->
+  <div id="screen-role-picker" class="screen">
+    <div class="rp-bg"></div>
+    <div class="rp-layout">
+      <div class="rp-header">
+        <div class="logo-small">🎭 MAFIA</div>
+        <div class="rp-header-info">
+          <span class="rp-title">Pick Roles</span>
+          <span class="rp-subtitle" id="rp-player-count"></span>
+        </div>
+      </div>
+
+      <div class="rp-grid">
+        <!-- Mafia House (top-left) -->
+        <div class="rp-section mafia-house">
+          <div class="rp-section-header">
+            <span class="rp-section-icon">🔪</span>
+            <span class="rp-section-title">Mafia House</span>
+          </div>
+          <div class="rp-roles" id="rp-roles-mafia"></div>
+        </div>
+
+        <!-- Civilian Town (top-right) -->
+        <div class="rp-section civilian-town">
+          <div class="rp-section-header">
+            <span class="rp-section-icon">🏛️</span>
+            <span class="rp-section-title">Civilian Town</span>
+          </div>
+          <div class="rp-roles" id="rp-roles-civilian"></div>
+        </div>
+
+        <!-- Neutrals (bottom-center) -->
+        <div class="rp-section neutrals">
+          <div class="rp-section-header">
+            <span class="rp-section-icon">⭐</span>
+            <span class="rp-section-title">Neutrals</span>
+          </div>
+          <div class="rp-roles" id="rp-roles-neutral"></div>
+        </div>
+      </div>
+
+      <div class="rp-start-area">
+        <p class="rp-validation-msg hidden" id="rp-validation-msg"></p>
+        <button id="btn-rp-start" class="btn-primary btn-start" onclick="startCustomGame()" disabled>
+          Start Game
+        </button>
       </div>
     </div>
   </div>

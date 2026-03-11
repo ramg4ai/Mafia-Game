@@ -591,6 +591,231 @@ h3 {
   padding: 16px;
 }
 
+/* ─── Role Mode Toggle ─────────────────────────────────────────────────────── */
+.role-mode-setting {
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+  margin-top: 4px;
+}
+
+.mode-toggle {
+  display: flex;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  width: 100%;
+}
+
+.mode-btn {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text3);
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 9px 0;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+  letter-spacing: 0.04em;
+}
+
+.mode-btn.active {
+  background: var(--purple);
+  color: #fff;
+}
+
+.mode-btn:not(.active):hover {
+  background: var(--bg3);
+  color: var(--text1);
+}
+
+/* ─── Role Picker Screen ───────────────────────────────────────────────────── */
+.rp-bg {
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(ellipse at 20% 20%, #1a0a2e 0%, #0a0a0a 70%);
+  z-index: 0;
+}
+
+.rp-layout {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  padding: 24px 32px 32px;
+  gap: 20px;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.rp-header {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.rp-header-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rp-title {
+  font-family: 'Cinzel', serif;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text1);
+}
+
+.rp-subtitle {
+  font-size: 0.85rem;
+  color: var(--text3);
+}
+
+/* 3-column grid: [mafia] [civilian] on top, [neutral] centered on bottom */
+.rp-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: auto auto;
+  gap: 18px;
+}
+
+.rp-section.neutrals {
+  grid-column: 1 / -1;
+  max-width: 480px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.rp-section {
+  border-radius: 14px;
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border: 1px solid rgba(255,255,255,0.08);
+  backdrop-filter: blur(10px);
+}
+
+.rp-section.mafia-house {
+  background: linear-gradient(145deg, rgba(127,29,29,0.55), rgba(69,10,10,0.45));
+}
+
+.rp-section.civilian-town {
+  background: linear-gradient(145deg, rgba(20,83,45,0.55), rgba(5,46,22,0.45));
+}
+
+.rp-section.neutrals {
+  background: linear-gradient(145deg, rgba(113,63,18,0.55), rgba(66,32,6,0.45));
+}
+
+.rp-section-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+  padding-bottom: 10px;
+}
+
+.rp-section-icon {
+  font-size: 1.3rem;
+}
+
+.rp-section-title {
+  font-family: 'Cinzel', serif;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text1);
+  letter-spacing: 0.04em;
+}
+
+.rp-roles {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.role-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.role-row-icon {
+  font-size: 1.15rem;
+  width: 26px;
+  text-align: center;
+}
+
+.role-row-name {
+  flex: 1;
+  font-size: 0.92rem;
+  font-weight: 500;
+  color: var(--text1);
+}
+
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0,0,0,0.3);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px;
+  padding: 4px 8px;
+}
+
+.stepper-btn {
+  background: transparent;
+  border: none;
+  color: var(--text1);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+
+.stepper-btn:hover:not(:disabled) {
+  background: rgba(255,255,255,0.12);
+}
+
+.stepper-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.stepper-count {
+  font-size: 1rem;
+  font-weight: 700;
+  min-width: 22px;
+  text-align: center;
+  color: var(--text1);
+}
+
+/* ─── Role Picker Start Area ───────────────────────────────────────────────── */
+.rp-start-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.rp-validation-msg {
+  font-size: 0.88rem;
+  color: #fca5a5;
+  text-align: center;
+  font-weight: 500;
+}
+
+
 .share-bar {
   margin-top: 20px;
   display: flex;

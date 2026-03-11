@@ -17,9 +17,12 @@ const state = {
     discussionMinutes: 3,
     nightPhaseSeconds: 30,
     voteSeconds: 30,
+    roleMode: 'auto',
+    roleCounts: {},        // { ROLEKEY: count } for custom mode
+    customPlayerCount: 0,  // set when room is locked
     currentNightRole: null,
     selectedTarget: null,
-    allTargets: [],      // full target list including self (for Joker re-render)
+    allTargets: [],
     jokerAction: 'kill',
     hasVoted: false,
     isAlive: true,
@@ -160,6 +163,133 @@ function startGame() {
     socket.emit('start-game');
 }
 
+// ─── Role Mode Toggle ─────────────────────────────────────────────────────────
+function setMode(mode) {
+    if (!state.isHost) return;
+    state.roleMode = mode;
+    socket.emit('set-mode', { mode });
+
+    // Update toggle UI
+    document.getElementById('btn-mode-auto').classList.toggle('active', mode === 'auto');
+    document.getElementById('btn-mode-custom').classList.toggle('active', mode === 'custom');
+
+    // Swap buttons
+    document.getElementById('btn-start-game').classList.toggle('hidden', mode === 'custom');
+    document.getElementById('btn-pick-roles').classList.toggle('hidden', mode === 'auto');
+
+    // Refresh player count badge with correct cap
+    const badge = document.getElementById('player-count-badge');
+    const max = mode === 'custom' ? 20 : 10;
+    const current = parseInt(badge.textContent.split('/')[0]) || 0;
+    badge.textContent = `${current}/${max}`;
+}
+
+function pickRoles() {
+    if (!state.isHost) return;
+    socket.emit('lock-room');
+}
+
+// ─── Role Picker ─────────────────────────────────────────────────────────────
+// Client-side catalogue mirrors server ROLE_CATALOGUE for rendering.
+const ROLE_CATALOGUE_CLIENT = {
+    mafia:    [
+        { key: 'MAFIA',     name: 'Mafia',      icon: '🔪' },
+        { key: 'TRAITOR',   name: 'Traitor',    icon: '🎭' },
+    ],
+    civilian: [
+        { key: 'CIVILIAN',  name: 'Civilian',   icon: '🧑' },
+        { key: 'DOCTOR',    name: 'Doctor',     icon: '💉' },
+        { key: 'POLICE',    name: 'Police',     icon: '🔍' },
+        { key: 'VIGILANTE', name: 'Vigilante',  icon: '🔫' },
+    ],
+    neutral: [
+        { key: 'JOKER',     name: 'Joker',      icon: '🃏' },
+        { key: 'JESTER',    name: 'Jester',     icon: '🤡' },
+    ],
+};
+
+function renderRolePicker(playerCount) {
+    state.customPlayerCount = playerCount;
+    // Reset all counts to 0
+    state.roleCounts = {};
+    for (const faction of Object.values(ROLE_CATALOGUE_CLIENT)) {
+        for (const r of faction) state.roleCounts[r.key] = 0;
+    }
+
+    document.getElementById('rp-player-count').textContent = `${playerCount} players joined — assign ${playerCount} roles`;
+
+    const factionMap = { mafia: 'mafia', civilian: 'civilian', neutral: 'neutral' };
+    for (const [faction, roles] of Object.entries(ROLE_CATALOGUE_CLIENT)) {
+        const container = document.getElementById(`rp-roles-${factionMap[faction]}`);
+        container.innerHTML = roles.map(r => `
+        <div class="role-row" id="row-${r.key}">
+          <span class="role-row-icon">${r.icon}</span>
+          <span class="role-row-name">${r.name}</span>
+          <div class="stepper">
+            <button class="stepper-btn" id="btn-minus-${r.key}" onclick="adjustRoleCount('${r.key}',-1)" disabled>−</button>
+            <span class="stepper-count" id="count-${r.key}">0</span>
+            <button class="stepper-btn" id="btn-plus-${r.key}"  onclick="adjustRoleCount('${r.key}',1)">+</button>
+          </div>
+        </div>`).join('');
+    }
+    validateCustomRoles();
+}
+
+function adjustRoleCount(roleKey, delta) {
+    const current = state.roleCounts[roleKey] || 0;
+    const next = Math.max(0, current + delta);
+
+    // Cannot exceed total players
+    const totalAssigned = Object.values(state.roleCounts).reduce((a, b) => a + b, 0);
+    if (delta > 0 && totalAssigned >= state.customPlayerCount) return;
+
+    state.roleCounts[roleKey] = next;
+    document.getElementById(`count-${roleKey}`).textContent = next;
+
+    // Disable minus if 0
+    document.getElementById(`btn-minus-${roleKey}`).disabled = next === 0;
+
+    // Disable all plus buttons if total reached
+    const newTotal = Object.values(state.roleCounts).reduce((a, b) => a + b, 0);
+    for (const faction of Object.values(ROLE_CATALOGUE_CLIENT)) {
+        for (const r of faction) {
+            document.getElementById(`btn-plus-${r.key}`).disabled = newTotal >= state.customPlayerCount;
+        }
+    }
+
+    validateCustomRoles();
+}
+
+function validateCustomRoles() {
+    const total = Object.values(state.roleCounts).reduce((a, b) => a + b, 0);
+    const matches = total === state.customPlayerCount;
+    document.getElementById('btn-rp-start').disabled = !matches;
+    document.getElementById('rp-player-count').textContent =
+        `${state.customPlayerCount} players joined — ${total} / ${state.customPlayerCount} roles assigned`;
+    const msg = document.getElementById('rp-validation-msg');
+    msg.classList.add('hidden');
+}
+
+function startCustomGame() {
+    // Build flat role array
+    const roleList = [];
+    for (const [key, count] of Object.entries(state.roleCounts)) {
+        for (let i = 0; i < count; i++) roleList.push(key);
+    }
+
+    // Min-2 check before sending
+    const mafiaCount = roleList.filter(r => ROLE_CATALOGUE_CLIENT.mafia.some(m => m.key === r)).length;
+    const civilianCount = roleList.filter(r => ROLE_CATALOGUE_CLIENT.civilian.some(c => c.key === r)).length;
+    const msgEl = document.getElementById('rp-validation-msg');
+    if (mafiaCount < 2 || civilianCount < 2) {
+        msgEl.textContent = 'Assign at least two players for Mafia House and Civilian Town!';
+        msgEl.classList.remove('hidden');
+        return;
+    }
+    msgEl.classList.add('hidden');
+    socket.emit('start-game', { customRoles: roleList });
+}
+
 // ─── Waiting Room ────────────────────────────────────────────────────────────
 function renderPlayerList(players, hostName) {
     const list = document.getElementById('player-list');
@@ -172,13 +302,20 @@ function renderPlayerList(players, hostName) {
   `).join('');
 
     const count = players.length;
-    document.getElementById('player-count-badge').textContent = `${count}/10`;
+    const max = state.roleMode === 'custom' ? 20 : 10;
+    document.getElementById('player-count-badge').textContent = `${count}/${max}`;
 
-    const startBtn = document.getElementById('btn-start-game');
-    if (startBtn) {
-        startBtn.disabled = count < 6;
+    if (state.isHost) {
+        const startBtn = document.getElementById('btn-start-game');
+        const pickBtn  = document.getElementById('btn-pick-roles');
+        if (state.roleMode === 'custom') {
+            if (pickBtn) pickBtn.disabled = count < 6;
+        } else {
+            if (startBtn) startBtn.disabled = count < 6;
+        }
     }
-    document.getElementById('waiting-hint').textContent =
+    const hintEl = document.getElementById('waiting-hint');
+    if (hintEl) hintEl.textContent =
         count < 6 ? `${6 - count} more player${6 - count !== 1 ? 's' : ''} needed to start`
             : `${count} player${count !== 1 ? 's' : ''} ready!`;
 }
@@ -615,6 +752,35 @@ socket.on('lobby-update', ({ players, hostName }) => {
     if (me) state.isHost = me.isHost;
     if (state.isHost) {
         document.getElementById('host-controls').style.display = 'block';
+    }
+});
+
+socket.on('mode-updated', ({ mode }) => {
+    state.roleMode = mode;
+    if (state.isHost) {
+        // Sync toggle buttons
+        document.getElementById('btn-mode-auto').classList.toggle('active', mode === 'auto');
+        document.getElementById('btn-mode-custom').classList.toggle('active', mode === 'custom');
+        document.getElementById('btn-start-game').classList.toggle('hidden', mode === 'custom');
+        document.getElementById('btn-pick-roles').classList.toggle('hidden', mode === 'auto');
+    }
+    // Update badge cap for all players
+    const badge = document.getElementById('player-count-badge');
+    if (badge) {
+        const currentCount = parseInt(badge.textContent.split('/')[0]) || 0;
+        badge.textContent = `${currentCount}/${mode === 'custom' ? 20 : 10}`;
+    }
+});
+
+socket.on('room-locked', ({ roleCatalogue, playerCount }) => {
+    if (state.isHost) {
+        // Only host goes to role picker; non-hosts wait
+        renderRolePicker(playerCount);
+        showScreen('role-picker');
+    } else {
+        // Show a waiting message to non-host players
+        const hint = document.getElementById('waiting-hint');
+        if (hint) hint.textContent = 'Waiting for the host to pick roles…';
     }
 });
 
