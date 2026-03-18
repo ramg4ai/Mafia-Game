@@ -1056,8 +1056,22 @@ function getRoleDescription(roleKey) {
 // Start Server
 // ─────────────────────────────────────────────────────────────────────────────
 
-server.listen(PORT, () => {
-  console.log(`\n🎭 Mafia Game Server running at http://localhost:${PORT}`);
-  console.log(`   Share your local IP with teammates on the same network`);
-  console.log(`   For VPN users: run 'npx ngrok http ${PORT}' for a public URL\n`);
-});
+if (require.main === module) {
+  server.listen(PORT, () => {
+    console.log(`\n🎭 Mafia Game Server running at http://localhost:${PORT}`);
+    console.log(`   Share your local IP with teammates on the same network`);
+    console.log(`   For VPN users: run 'npx ngrok http ${PORT}' for a public URL\n`);
+  });
+}
+
+module.exports = {
+  assignRoles,
+  checkWinCondition,
+  getNextNightActor,
+  resolveMafiaVotes,
+  resolveNightActions,
+  ROLES,
+  ROLE_CATALOGUE,
+  NIGHT_ORDER,
+  NIGHT_ACTORS
+};
