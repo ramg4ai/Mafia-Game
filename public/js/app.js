@@ -182,6 +182,15 @@ function setMode(mode) {
     const max = mode === 'custom' ? 20 : 10;
     const current = parseInt(badge.textContent.split('/')[0]) || 0;
     badge.textContent = `${current}/${max}`;
+
+    // Re-evaluate button enabled state based on current player count in lobby
+    const pickBtn  = document.getElementById('btn-pick-roles');
+    const startBtn = document.getElementById('btn-start-game');
+    if (mode === 'custom') {
+        if (pickBtn) pickBtn.disabled = current < 6;
+    } else {
+        if (startBtn) startBtn.disabled = current < 6;
+    }
 }
 
 function pickRoles() {

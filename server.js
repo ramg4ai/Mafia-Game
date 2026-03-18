@@ -1,14 +1,18 @@
 const express = require('express');
-const http = require('http');
+const http    = require('http');
 const { Server } = require('socket.io');
-const { v4: uuidv4 } = require('uuid');
-const path = require('path');
+const path    = require('path');
 
-const app = express();
+const {
+  ROLES, ROLE_CATALOGUE, NIGHT_ORDER, NIGHT_ACTORS,
+  assignRoles, checkWinCondition, getNextNightActor,
+  resolveMafiaVotes, resolveNightActions, resolveVotesPure,
+  validateCustomRoles, getRoleDescription,
+} = require('./gameLogic');
+
+const app    = express();
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: { origin: '*' }
-});
+const io     = new Server(server, { cors: { origin: '*' } });
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -21,239 +25,6 @@ const PORT = process.env.PORT || 3000;
 const rooms = {}; // roomCode → gameState
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Role & Group Definitions
-// ─────────────────────────────────────────────────────────────────────────────
-
-const ROLES = {
-  MAFIA: { name: 'Mafia', group: 'mafia', special: false },
-  TRAITOR: { name: 'Traitor', group: 'mafia', special: true },
-  DOCTOR: { name: 'Doctor', group: 'civilian', special: false },
-  POLICE: { name: 'Police', group: 'civilian', special: false },
-  VIGILANTE: { name: 'Vigilante', group: 'civilian', special: true },
-  JESTER: { name: 'Jester', group: 'neutral', special: true },
-  JOKER: { name: 'Joker', group: 'neutral', special: false },
-  CIVILIAN: { name: 'Civilian', group: 'civilian', special: false },
-};
-
-// Night phase action order — Mafia Group first, then Civilian, then Neutral.
-// CIVILIAN and JESTER are not included because they have no night action.
-const NIGHT_ORDER = ['MAFIA', 'TRAITOR', 'DOCTOR', 'POLICE', 'VIGILANTE', 'JOKER'];
-
-// Night actors — which roles actually DO something at night
-const NIGHT_ACTORS = new Set(['MAFIA', 'TRAITOR', 'DOCTOR', 'POLICE', 'VIGILANTE', 'JOKER']);
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Role Catalogue (used by Custom mode role picker)
-// Add new roles here — this is the single source of truth for the picker UI.
-// ─────────────────────────────────────────────────────────────────────────────
-const ROLE_CATALOGUE = {
-  mafia:    ['MAFIA', 'TRAITOR'],
-  civilian: ['CIVILIAN', 'DOCTOR', 'POLICE', 'VIGILANTE'],
-  neutral:  ['JOKER', 'JESTER'],
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Role Assignment Logic
-// ─────────────────────────────────────────────────────────────────────────────
-
-function assignRoles(playerCount) {
-  let roles = [];
-
-  if (playerCount === 6) {
-    roles = ['MAFIA', 'MAFIA', 'DOCTOR', 'POLICE', 'CIVILIAN', 'JOKER'];
-  } else if (playerCount === 7) {
-    roles = ['MAFIA', 'MAFIA', 'DOCTOR', 'POLICE', 'CIVILIAN', 'CIVILIAN', 'JOKER'];
-  } else if (playerCount === 8) {
-    roles = ['MAFIA', 'MAFIA', 'MAFIA', 'DOCTOR', 'POLICE', 'CIVILIAN', 'CIVILIAN', 'JOKER'];
-  } else if (playerCount === 9) {
-    // 1 mandatory special Mafia role (Traitor)
-    roles = ['MAFIA', 'MAFIA', 'TRAITOR', 'DOCTOR', 'POLICE', 'CIVILIAN', 'CIVILIAN', 'CIVILIAN', 'JOKER'];
-  } else if (playerCount === 10) {
-    // 1 mandatory special from each group: Traitor (mafia), Vigilante (civilian), Jester (neutral)
-    roles = ['MAFIA', 'MAFIA', 'TRAITOR', 'DOCTOR', 'POLICE', 'VIGILANTE', 'CIVILIAN', 'CIVILIAN', 'JOKER', 'JESTER'];
-  }
-
-  // Shuffle
-  for (let i = roles.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [roles[i], roles[j]] = [roles[j], roles[i]];
-  }
-  return roles;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Win Condition Checker
-// ─────────────────────────────────────────────────────────────────────────────
-
-function checkWinCondition(room) {
-  const alivePlayers = room.players.filter(p => p.alive);
-
-  const mafiaCount = alivePlayers.filter(p => ROLES[p.role].group === 'mafia').length;
-  const civilianCount = alivePlayers.filter(p => ROLES[p.role].group === 'civilian').length;
-  const neutralCount = alivePlayers.filter(p => ROLES[p.role].group === 'neutral').length;
-
-  // Rule 1: Both Mafia and Civilian are zero, at least one Neutral → Neutral win
-  if (mafiaCount === 0 && civilianCount === 0 && neutralCount >= 1) {
-    return { winner: 'Neutrals', reason: 'Only Neutrals remain' };
-  }
-
-  // Rule 2: No Civilians left → Mafia wins
-  if (civilianCount === 0) {
-    return { winner: 'Mafia', reason: 'All Civilians have been eliminated' };
-  }
-
-  // Rule 3: No Mafia left → Civilians win
-  if (mafiaCount === 0) {
-    return { winner: 'Civilians', reason: 'All Mafia have been eliminated' };
-  }
-
-  // Rule 4: Exactly one Civilian alive
-  if (civilianCount === 1) {
-    if (neutralCount >= 1) {
-      // At least one Neutral exists → game continues
-      return null;
-    } else {
-      // No Neutrals left → Mafia wins
-      return { winner: 'Mafia', reason: 'Mafia outnumbers the last Civilian' };
-    }
-  }
-
-  // Rule 5: All other conditions → game continues
-  return null;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Night Phase Helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-function getNextNightActor(room) {
-  for (const roleKey of NIGHT_ORDER) {
-    if (!NIGHT_ACTORS.has(roleKey)) continue;
-
-    if (roleKey === 'MAFIA' || roleKey === 'TRAITOR') {
-      // All mafia-group members act together as MAFIA_GROUP
-      if (room.nightActed.has('MAFIA_GROUP')) continue;
-      const mafiaAlive = room.players.filter(p => ROLES[p.role].group === 'mafia' && p.alive);
-      const mafiaDead  = room.players.filter(p => ROLES[p.role].group === 'mafia' && !p.alive);
-      if (!room.nightActed.has('MAFIA_GROUP')) {
-        room.nightActed.add('MAFIA_GROUP');
-        if (mafiaAlive.length > 0) return { role: 'MAFIA_GROUP', players: mafiaAlive, isGhost: false };
-        if (mafiaDead.length  > 0) return { role: 'MAFIA_GROUP', players: mafiaDead,  isGhost: true  };
-      }
-    } else {
-      // Group ALL alive players of this role into one simultaneous turn
-      if (room.nightActed.has(roleKey)) continue;
-      const alivePlayers = room.players.filter(p => p.role === roleKey && p.alive);
-      if (alivePlayers.length > 0) {
-        room.nightActed.add(roleKey);
-        return { role: roleKey, players: alivePlayers, isGhost: false };
-      }
-      const deadPlayers = room.players.filter(p => p.role === roleKey && !p.alive);
-      if (deadPlayers.length > 0) {
-        room.nightActed.add(roleKey);
-        return { role: roleKey, players: deadPlayers, isGhost: true };
-      }
-    }
-  }
-  return null; // all actors done
-}
-
-// Returns the kill target id if there is a clear majority, null on tie or no votes.
-function resolveMafiaVotes(mafiaVotes) {
-  const votes = Object.values(mafiaVotes);
-  if (votes.length === 0) return null; // nobody voted
-
-  const tally = {};
-  for (const v of votes) tally[v] = (tally[v] || 0) + 1;
-
-  const sorted = Object.entries(tally).sort((a, b) => b[1] - a[1]);
-  // Clear majority = top candidate is strictly ahead of second place
-  if (sorted.length === 1 || sorted[0][1] > sorted[1][1]) {
-    return sorted[0][0]; // unambiguous winner
-  }
-  return null; // tie — no kill
-}
-
-function resolveNightActions(room) {
-  const events = [];
-
-  // ── Mafia kill ────────────────────────────────────────────────────────────
-  if (room.nightActions.mafiaKill) {
-    const target = room.players.find(p => p.id === room.nightActions.mafiaKill);
-    if (target) target.killFlagged = true;
-  }
-
-  // ── Doctor saves (multiple doctors each save one target) ──────────────────
-  for (const { targetId } of room.nightActions.doctorSaves) {
-    const target = room.players.find(p => p.id === targetId);
-    if (target && target.killFlagged) {
-      target.killFlagged = false;
-    }
-  }
-
-  // ── Joker actions (all jokers act; protect beats kill on same target) ─────
-  const jokerKills    = room.nightActions.jokerActions.filter(a => a.action === 'kill');
-  const jokerProtects = room.nightActions.jokerActions.filter(a => a.action === 'protect');
-
-  // Apply joker kills first
-  for (const { targetId } of jokerKills) {
-    const target = room.players.find(p => p.id === targetId);
-    if (target) target.killFlagged = true;
-  }
-
-  // Then joker protects cancel any kills (including joker kills) on that target
-  for (const { targetId } of jokerProtects) {
-    const target = room.players.find(p => p.id === targetId);
-    if (target && target.killFlagged) {
-      target.killFlagged = false;
-      events.push({ type: 'save', message: 'A Joker protected someone tonight!' });
-    }
-  }
-
-  // ── Vigilante kills (multiple vigilantes each pick a target) ─────────────
-  for (const { playerId, targetId } of room.nightActions.vigilanteKills) {
-    const target    = room.players.find(p => p.id === targetId);
-    const vigilante = room.players.find(p => p.id === playerId);
-    if (target && vigilante) {
-      if (ROLES[target.role].group === 'civilian') {
-        vigilante.killFlagged = true; // backfire
-      } else {
-        target.killFlagged = true;
-      }
-    }
-  }
-
-  // ── Eliminate kill-flagged players ─────────────────────────────────────────
-  const eliminated = [];
-  for (const player of room.players) {
-    if (player.killFlagged) {
-      player.alive = false;
-      player.killFlagged = false;
-      eliminated.push(player.name);
-      if (ROLES[player.role].group === 'mafia') {
-        io.sockets.sockets.get(player.id)?.leave(`mafia-${room.code}`);
-      }
-    }
-  }
-
-  // Score ghost guesses
-  const correctGuessers = [];
-  for (const [playerId, targetId] of Object.entries(room.ghostGuesses)) {
-    const guesser = room.players.find(p => p.id === playerId);
-    if (!guesser) continue;
-    const correct =
-      (targetId === 'none' && eliminated.length === 0) ||
-      (targetId !== 'none' && eliminated.some(name => {
-        const target = room.players.find(p => p.id === targetId);
-        return target && target.name === name;
-      }));
-    if (correct) correctGuessers.push(guesser.name);
-  }
-
-  return { eliminated, events, correctGuessers };
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Night Turn Timer
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -264,7 +35,7 @@ function startNightTurn(room) {
 
   if (!current) {
     // All night actors done → resolve and start day
-    const { eliminated, events, correctGuessers } = resolveNightActions(room);
+    const { eliminated, events, correctGuessers } = resolveNightActions(room, io);
     room.phase = 'day-start';
 
     io.to(room.code).emit('night-resolved', { eliminated, events, correctGuessers });
@@ -1034,23 +805,6 @@ io.on('connection', (socket) => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Role Descriptions
-// ─────────────────────────────────────────────────────────────────────────────
-
-function getRoleDescription(roleKey) {
-  const descriptions = {
-    MAFIA: 'You are Mafia. Each night, vote with your team to eliminate a civilian.',
-    TRAITOR: 'You are a Traitor. You work with the Mafia but appear as Civilian to investigators.',
-    DOCTOR: 'You are the Doctor. Each night, choose one player to protect from elimination.',
-    POLICE: 'You are the Police. Each night, investigate one player to learn their identity.',
-    VIGILANTE: 'You are the Vigilante. Each night, you may kill one player. If your target is Civilian, you die instead.',
-    JESTER: 'You are the Jester. Get voted out during the day to win! (You have no night ability)',
-    JOKER: 'You are the Joker. Each night you may kill, protect, or investigate one player.',
-    CIVILIAN: 'You are a Civilian. Survive the night and help identify the Mafia during the day.',
-  };
-  return descriptions[roleKey] || '';
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Start Server

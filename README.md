@@ -19,7 +19,9 @@ A real-time multiplayer Mafia party game built with **Node.js**, **Express**, an
 
 ```
 Mafia Game/
-├── server.js              # All server logic: rooms, game phases, socket events
+├── server.js              # Networking shell: Socket.IO event handlers & timers
+├── gameLogic.js           # Pure game logic (roles, win conditions, night resolution)
+├── gameLogic.test.js      # Jest unit tests — 83 tests, ~98% coverage of gameLogic.js
 ├── package.json
 └── public/
     ├── index.html         # Single-page app (all screens in one file)
@@ -44,9 +46,9 @@ For remote play: use `npx ngrok http 3000` to get a public URL.
 
 ---
 
-## Core Server Constants (server.js)
+## Core Game Constants (`gameLogic.js`)
 
-These are the central sources of truth. Always update these when adding new roles or changing game mechanics.
+All pure game logic lives in `gameLogic.js` and is imported by `server.js`. Always update these when adding new roles or changing game mechanics.
 
 ### `ROLES` — Role definitions
 ```js
@@ -155,10 +157,11 @@ Lobby (waiting room)
 
 ---
 
-## Night Phase Logic (server.js)
+## Night Phase Logic (`gameLogic.js`)
 
 - `getNextNightActor(room)` — returns the next role group that should act. MAFIA + TRAITOR are merged into one `MAFIA_GROUP` turn. Multiple players sharing the same role all act simultaneously.
-- `resolveNightActions(room)` — processes all submitted actions. Priority: Doctor save > Mafia kill. Joker protect cancels kills on the same target.
+- `resolveNightActions(room, io?)` — processes all submitted actions. Priority: Doctor save > Mafia kill. Joker protect cancels kills on the same target. Accepts an optional `io` stub for testability.
+- `resolveVotesPure(room)` — pure day-vote resolution returning a result object; called by `resolveVotes` in `server.js`.
 - `room.nightActedPlayers` — Set of socket IDs tracking per-player action completion within a shared-role turn.
 
 ---
@@ -204,14 +207,38 @@ Police (and Joker in investigate mode) reveals only the **group** of the target 
 
 ## Adding a New Role
 
-1. Add an entry to `ROLES` in `server.js`.
-2. Add the role to the appropriate group in `ROLE_CATALOGUE`.
-3. If the role has a night action, add it to `NIGHT_ORDER` and `NIGHT_ACTORS`.
-4. Implement the server-side socket handler (e.g. `socket.on('new-role-action', ...)`).
-5. Add night action resolution logic in `resolveNightActions`.
-6. Update `getRoleDescription` at the bottom of `server.js`.
+1. Add an entry to `ROLES` in **`gameLogic.js`**.
+2. Add the role to the appropriate group in `ROLE_CATALOGUE` in `gameLogic.js`.
+3. If the role has a night action, add it to `NIGHT_ORDER` and `NIGHT_ACTORS` in `gameLogic.js`.
+4. Implement the server-side socket handler in `server.js` (e.g. `socket.on('new-role-action', ...)`).
+5. Add night action resolution logic in `resolveNightActions` in `gameLogic.js`.
+6. Update `getRoleDescription` in `gameLogic.js`.
 7. Add the role icon to `ROLE_ICONS` in `public/js/app.js`.
 8. Add client-side handler for `your-night-turn` in `app.js` (titles/descriptions).
+9. Add corresponding unit tests in `gameLogic.test.js`.
+
+---
+
+## Testing
+
+```bash
+npm test                # Run all tests with coverage report
+npm run test:watch      # Watch mode for TDD
+```
+
+Tests live in `gameLogic.test.js` and cover all exported functions from `gameLogic.js`:
+
+| Group | Tests |
+|-------|-------|
+| `ROLES` / `ROLE_CATALOGUE` / `NIGHT_ORDER` | Constants validation |
+| `assignRoles` | Correct composition for 6–10 players; shuffle variance |
+| `checkWinCondition` | All 5 win/continue scenarios |
+| `resolveMafiaVotes` | Majority, tie, no votes |
+| `resolveNightActions` | Kill, save, joker kill/protect, vigilante backfire, ghost guesses, io stub |
+| `getNextNightActor` | Turn ordering, ghost path, multiple players per role |
+| `resolveVotesPure` | Elimination, tie, skip-override, Jester win |
+| `validateCustomRoles` | Valid/invalid role sets |
+| `getRoleDescription` | All 8 roles have descriptions |
 
 ---
 
